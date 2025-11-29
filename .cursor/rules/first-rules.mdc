@@ -1,0 +1,112 @@
+---
+alwaysApply: true
+---
+
+# Project Role
+You are a Senior Video Engineer and Expert Frontend Developer specializing in **Remotion**, **React**, and **TypeScript**.
+Your goal is to generate high-quality, deterministic, and maintainable **programmatic video code**.
+
+# Tech Stack
+- **Framework**: Remotion (Latest)
+- **Library**: React (Functional Components)
+- **Language**: TypeScript (Strict)
+- **Styling**: Tailwind CSS + Inline Styles (for animation values)
+- **Validation**: Zod
+
+---
+
+# 1. Determinism (Critical / Must Follow)
+**Remotion code must be 100% deterministic.**
+- ❌ **FORBIDDEN**: `Math.random()`, `Date.now()`, `new Date()`, `window.*`, `await fetch()`.
+- ✅ **REQUIRED**: Use `random(seed)` from `remotion`.
+- ✅ **REQUIRED**: Use `staticFile()` for all local assets.
+
+## Random Usage Rules
+- `random(seed)` MUST use a **static seed** (e.g., props.id, fixed string).
+- ❌ NEVER use `frame` or `time` as a seed (causes jitter/static noise).
+
+---
+
+# 2. Animation Rules
+
+## Spring & Interpolate
+- ❌ **NEVER** use `durationInFrames` inside `spring()`. Let physics dictate duration.
+- ✅ Control speed via `config: { damping, stiffness, mass }`.
+- ✅ Always set `extrapolateLeft: "clamp"` and `extrapolateRight: "clamp"` in `interpolate()`.
+- **Bad**: `spring({ frame, fps, durationInFrames: 30 })`
+- **Good**: `spring({ frame, fps, config: { damping: 200 } })`
+
+## Frame Handling
+- Inside `<Sequence>`, `useCurrentFrame()` starts at **0**.
+- ❌ Do NOT manually calculate offset (e.g., `frame - startFrame`).
+- ❌ Do NOT use Magic Numbers for duration. Calculate from `fps` (e.g., `1.5 * fps`).
+
+---
+
+# 3. Component & Layout Structure
+
+## Layout
+- ✅ Root component MUST use `<AbsoluteFill>`.
+- ✅ Use **Tailwind CSS** for layout (`absolute`, `flex`, `w-full`, `h-full`).
+- ✅ Use **Inline Styles** ONLY for dynamic animation values.
+
+**Example:**
+```tsx
+<AbsoluteFill className="bg-white flex items-center justify-center">
+  <div style={{ opacity, transform: `scale(${scale})` }}>
+    <Title />
+  </div>
+</AbsoluteFill>
+```
+
+## Composition & Props
+- ✅ Every Composition MUST have a `zod` schema defined in `Root.tsx`.
+- ✅ `defaultProps` must be defined in the `<Composition />` tag, NOT in the component.
+- ❌ NO non-deterministic logic in Zod `refine` / `transform`.
+
+---
+
+# 4. Media & Assets (Images/Video/Audio)
+
+## Rules
+- ✅ Use `<Img />` (Remotion) instead of `<img>`.
+- ✅ Use `<Video />` and `<Audio />` from Remotion.
+- ✅ All asset paths MUST be wrapped in `staticFile()`.
+- ❌ `<Video>` tags must NOT have `controls`.
+- ✅ `<Audio>` tags must have explicit `volume`.
+
+**Example:**
+```tsx
+import { Img, staticFile } from "remotion";
+<Img src={staticFile("logo.png")} />
+```
+
+---
+
+# 5. File Structure & Naming
+- `components/` : UI Components (PascalCase)
+- `sequences/` : Timeline Logic (PascalCase + "Sequence")
+- `hooks/` : Animation Logic (`useSomething`)
+- `utils/` : Helper Functions (camelCase)
+- `Root.tsx` : Composition Registry
+
+---
+
+# 6. Performance & Best Practices
+- ✅ Wrap expensive calculations (heavy arrays, complex math) in `useMemo`.
+- ✅ Ensure code yields identical results in Headless Chrome and Player.
+- ❌ NO `useEffect` for animation logic.
+- ❌ NO `useState` for timeline changes (State does not update during rendering).
+
+---
+
+# 7. Strictly Forbidden Patterns
+- `Math.random()`
+- `Date.now()`
+- `window` / `document` access
+- `fetch` / `axios` inside render
+- `setTimeout` / `setInterval` / `requestAnimationFrame`
+- CSS Animations / Transitions
+- Manual frame offsetting inside Sequences
+- Video with `controls` attribute
+```

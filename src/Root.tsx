@@ -2,12 +2,28 @@ import "./index.css";
 import { Composition } from "remotion";
 import { HelloWorld, myCompSchema } from "./HelloWorld";
 import { Logo, myCompSchema2 } from "./HelloWorld/Logo";
+import { Main, myVideoSchema } from "./Video/Main";
 
 // Each <Composition> is an entry in the sidebar!
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      <Composition
+        id="MyVideo"
+        component={Main}
+        durationInFrames={300}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={myVideoSchema}
+        defaultProps={{
+            titleText: "中項目",
+            subtitleText: "源ノ角ゴシック Heavy",
+            audioSrc: undefined,
+        }}
+      />
+
       <Composition
         // You can take the "id" to render a video:
         // npx remotion render HelloWorld
