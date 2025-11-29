@@ -1,0 +1,44 @@
+[
+  {
+    "fileName": "001",
+    "text": "こんにちは！今回はRemotionを使って動画生成を自動化するテストを行っています。",
+    "speakerId": 3,
+    "audioSrc": "audio/001.wav"
+  },
+  {
+    "fileName": "002",
+    "text": "今まで手作業でやっていた編集作業を、プログラムコードで管理できるのがRemotionの強みです。Reactの知識があれば、Webサイトを作る感覚で動画が作れちゃうんです。すごいですよね。",
+    "speakerId": 3,
+    "audioSrc": "audio/002.wav"
+  },
+  {
+    "fileName": "003",
+    "text": "背景のグリッドや、私の立ち絵の表示、そしてこの口パクも、全部コードで制御されています。",
+    "speakerId": 3,
+    "audioSrc": "audio/003.wav"
+  },
+  {
+    "fileName": "004",
+    "text": "今回はVoicevoxを使って音声合成も自動化します。台本テキストを用意して、スクリプトを走らせれば、音声ファイルが生成されます。",
+    "speakerId": 3,
+    "audioSrc": "audio/004.wav"
+  },
+  {
+    "fileName": "005",
+    "text": "これが完成すれば、大量の動画を短時間で作れるようになります。YouTubeの運用や、解説動画の作成が劇的に楽になりますね。",
+    "speakerId": 3,
+    "audioSrc": "audio/005.wav"
+  },
+  {
+    "fileName": "006",
+    "text": "これからもっと機能を増やして、画像のスライドショーや、エフェクトなんかも自由自在に扱えるように改良していきますよ！",
+    "speakerId": 3,
+    "audioSrc": "audio/006.wav"
+  },
+  {
+    "fileName": "007",
+    "text": "それじゃあ、また次の動画でお会いしましょう！",
+    "speakerId": 3,
+    "audioSrc": "audio/007.wav"
+  }
+]
