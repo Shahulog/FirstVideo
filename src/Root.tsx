@@ -3,24 +3,30 @@ import { Composition } from "remotion";
 import { HelloWorld, myCompSchema } from "./HelloWorld";
 import { Logo, myCompSchema2 } from "./HelloWorld/Logo";
 import { Main, myVideoSchema } from "./Video/Main";
+import audioManifest from "./audio_manifest.json";
 
 // Each <Composition> is an entry in the sidebar!
 
 export const RemotionRoot: React.FC = () => {
+  
+  // Calculate total duration based on audio manifest
+  const fps = 30;
+  const bufferPerClip = 0.5; // Must match ScenarioPlayer buffer
+  const totalDurationInSeconds = audioManifest.reduce((acc, item) => acc + item.durationInSeconds + bufferPerClip, 0);
+  const totalDurationInFrames = Math.ceil(totalDurationInSeconds * fps);
+
   return (
     <>
       <Composition
         id="MyVideo"
         component={Main}
-        durationInFrames={300}
-        fps={30}
+        durationInFrames={Math.max(totalDurationInFrames, 300)} // Ensure at least some duration
+        fps={fps}
         width={1920}
         height={1080}
         schema={myVideoSchema}
         defaultProps={{
-            titleText: "中項目",
-            subtitleText: "源ノ角ゴシック Heavy",
-            audioSrc: undefined,
+            titleText: "自動生成動画テスト",
         }}
       />
 
