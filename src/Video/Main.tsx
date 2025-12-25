@@ -33,7 +33,7 @@ export const Main: React.FC<z.infer<typeof myVideoSchema>> = ({
             renderContent={(item) => (
                 <>
                     {/* Character Updates based on talking state */}
-                    <div className="absolute bottom-0 right-10 w-[400px] h-[500px]">
+                    <div className="absolute bottom-[-100px] right-10 w-[400px] h-[500px]">
                         {/* 
                            We pass isTalking=true constantly here because this component 
                            is mounted ONLY during the audio duration of this specific clip.
@@ -42,7 +42,8 @@ export const Main: React.FC<z.infer<typeof myVideoSchema>> = ({
                     </div>
 
                     {/* Subtitle Updates */}
-                    <TextOverlay title="" subtitle={item.text} />
+                    
+                        <TextOverlay title="" subtitle={item.text} />
                 </>
             )}
         />
