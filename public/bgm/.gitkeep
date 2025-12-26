@@ -1,0 +1,6 @@
+# Place your BGM files here
+# Example: main.mp3
+#
+# Usage in script.json:
+# "bgm": { "src": "bgm/main.mp3", ... }
+

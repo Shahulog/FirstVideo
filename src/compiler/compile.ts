@@ -10,9 +10,13 @@ import type {
   AudioTrack, 
   SubtitleTrack, 
   CharacterTrack,
-  TimelineAssets 
+  BgmTrack,
+  BgmClip,
+  TimelineAssets,
+  Track,
 } from "../../spec/timeline.schema";
 import { processDialogueBlock, type AudioManifestItem, type DialogueContext } from "./rules/dialogue";
+import { secToFrames } from "../domain/time";
 
 /**
  * Compile options
@@ -27,7 +31,7 @@ export interface CompileOptions {
  */
 export function compile(script: Script, options: CompileOptions): Timeline {
   const { audioManifest } = options;
-  const { fps, width, height } = script.video;
+  const { fps, width, height, bgm } = script.video;
   
   // Initialize tracks
   const audioTrack: AudioTrack = { type: "audio", clips: [] };
@@ -80,6 +84,48 @@ export function compile(script: Script, options: CompileOptions): Timeline {
     }
   }
   
+  // Build tracks array
+  const tracks: Track[] = [audioTrack, subtitleTrack, characterTrack];
+  
+  // Add BGM track if configured
+  if (bgm) {
+    const bgmAssetId = "bgm1";
+    
+    // Add BGM asset
+    assets.bgm = {
+      [bgmAssetId]: { src: bgm.src },
+    };
+    
+    // Create BGM clip with frame-based values
+    const bgmClip: BgmClip = {
+      assetId: bgmAssetId,
+      start: 0,
+      duration: currentFrame,
+      volume: bgm.volume ?? 0.25,
+      fadeInFrames: secToFrames(bgm.fadeInSec ?? 1.0, fps),
+      fadeOutFrames: secToFrames(bgm.fadeOutSec ?? 1.0, fps),
+      loop: bgm.loop ?? true,
+    };
+    
+    // Add ducking configuration if present
+    if (bgm.ducking) {
+      bgmClip.ducking = {
+        enabled: bgm.ducking.enabled ?? true,
+        duckVolume: bgm.ducking.duckVolume ?? 0.35,
+        attackFrames: secToFrames(bgm.ducking.attackSec ?? 0.1, fps),
+        releaseFrames: secToFrames(bgm.ducking.releaseSec ?? 0.2, fps),
+      };
+    }
+    
+    // Create BGM track
+    const bgmTrack: BgmTrack = {
+      type: "bgm",
+      clips: [bgmClip],
+    };
+    
+    tracks.push(bgmTrack);
+  }
+  
   // Build final timeline
   const timeline: Timeline = {
     version: "0.1",
@@ -90,7 +136,7 @@ export function compile(script: Script, options: CompileOptions): Timeline {
       totalFrames: currentFrame,
     },
     assets,
-    tracks: [audioTrack, subtitleTrack, characterTrack],
+    tracks,
   };
   
   return timeline;

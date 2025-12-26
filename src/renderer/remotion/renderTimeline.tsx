@@ -7,10 +7,11 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import type { Timeline } from "../../../spec/timeline.schema";
-import { getAudioTrack, getSubtitleTrack, getCharacterTrack } from "../../../spec/timeline.schema";
+import { getAudioTrack, getSubtitleTrack, getCharacterTrack, getBgmTrack } from "../../../spec/timeline.schema";
 import { AudioTrack } from "./tracks/AudioTrack";
 import { SubtitleTrack } from "./tracks/SubtitleTrack";
 import { CharacterTrack } from "./tracks/CharacterTrack";
+import { BgmTrack } from "./tracks/BgmTrack";
 import { Background } from "../../Video/Background";
 
 interface RenderTimelineProps {
@@ -25,6 +26,7 @@ export const RenderTimeline: React.FC<RenderTimelineProps> = ({
   const audioTrack = getAudioTrack(timeline);
   const subtitleTrack = getSubtitleTrack(timeline);
   const characterTrack = getCharacterTrack(timeline);
+  const bgmTrack = getBgmTrack(timeline);
   
   return (
     <AbsoluteFill className="bg-white">
@@ -43,7 +45,16 @@ export const RenderTimeline: React.FC<RenderTimelineProps> = ({
         <h2 className="text-4xl text-gray-500">Main Content / Slide Area</h2>
       </div>
       
-      {/* Audio Track */}
+      {/* BGM Track (rendered first, audio layer) */}
+      {bgmTrack && (
+        <BgmTrack 
+          track={bgmTrack} 
+          assets={timeline.assets} 
+          characterTrack={characterTrack}
+        />
+      )}
+      
+      {/* Audio Track (voice) */}
       {audioTrack && (
         <AudioTrack track={audioTrack} assets={timeline.assets} />
       )}
@@ -60,4 +71,3 @@ export const RenderTimeline: React.FC<RenderTimelineProps> = ({
     </AbsoluteFill>
   );
 };
-

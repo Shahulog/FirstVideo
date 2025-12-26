@@ -4,7 +4,20 @@
     "fps": 30,
     "width": 1920,
     "height": 1080,
-    "defaultPauseSec": 0.5
+    "defaultPauseSec": 0.5,
+    "bgm": {
+      "src": "bgm/main.mp3",
+      "volume": 0.25,
+      "fadeInSec": 1.0,
+      "fadeOutSec": 1.0,
+      "loop": true,
+      "ducking": {
+        "enabled": true,
+        "duckVolume": 0.35,
+        "attackSec": 0.1,
+        "releaseSec": 0.2
+      }
+    }
   },
   "cast": {
     "shahulog": {
@@ -70,4 +83,3 @@
     }
   ]
 }
-
