@@ -78,58 +78,130 @@ export const characterTrackSchema = z.object({
   clips: z.array(characterClipSchema),
 });
 
-// BGM ducking configuration (frame-based)
-// Priority order for ducking: duckDeltaDb > duckVolumeDb > duckVolume
+// ============================================================
+// BGM Configuration (Pro Quality - Frame-based)
+// ============================================================
+
+/**
+ * BGM ducking configuration (frame-based) with stabilization
+ * Priority order for ducking: duckDeltaDb > duckVolumeDb > duckVolume
+ */
 export const bgmDuckingSchema = z.object({
   enabled: z.boolean().default(true),
+  
   /** 
    * Relative dB reduction during dialogue (usually negative, e.g. -8)
    * Priority 1 (HIGHEST): Applied as baseGain * 10^(duckDeltaDb/20)
    */
   duckDeltaDb: z.number().min(-60).max(0).optional(),
+  
   /**
    * Absolute dB level during dialogue (e.g. -20)
    * Priority 2: Applied as 10^(duckVolumeDb/20)
    */
   duckVolumeDb: z.number().min(-60).max(6).optional(),
+  
   /** 
    * Volume multiplier during dialogue (0.0-1.0)
    * Priority 3 (LOWEST): Applied as baseGain * duckVolume
    */
   duckVolume: z.number().min(0).max(1).optional(),
+  
   /** Attack time in frames */
   attackFrames: z.number().int().nonnegative().default(3),
+  
   /** Release time in frames */
-  releaseFrames: z.number().int().nonnegative().default(6),
+  releaseFrames: z.number().int().nonnegative().default(8),
+  
+  // --- Anti-wobble stabilization ---
+  
+  /** 
+   * Merge gap threshold in frames
+   * Adjacent talk intervals closer than this are merged
+   */
+  mergeGapFrames: z.number().int().nonnegative().optional(),
+  
+  /** 
+   * Minimum hold duration in frames
+   * Short talk intervals are extended to at least this duration
+   */
+  minHoldFrames: z.number().int().nonnegative().optional(),
 });
 
-// BGM clip on the bgm track
-// Priority order for base volume: volumeDb > volume > DEFAULT_BASE_DB (-12)
+/**
+ * BGM clip on the bgm track (Pro Quality)
+ * Priority order for base volume: volumeDb > volume > DEFAULT_BASE_DB (-12)
+ */
 export const bgmClipSchema = z.object({
   assetId: z.string(),
   start: z.number().int().nonnegative(),
   duration: z.number().int().positive(),
+  
+  // --- Base volume ---
+  
   /**
    * Base volume in dB (e.g. -12)
    * Priority 1 (HIGHEST): Converted to gain = 10^(volumeDb/20)
    */
   volumeDb: z.number().min(-60).max(6).optional(),
+  
   /** 
    * Base volume (0.0-1.0)
    * Priority 2 (LOWEST): Used directly as gain
    */
   volume: z.number().min(0).max(1).optional(),
+  
+  /**
+   * Maximum gain in dB (clip prevention)
+   * Final gain is clamped to this value
+   */
+  maxGainDb: z.number().min(-60).max(6).optional(),
+  
+  // --- Fade ---
+  
   /** Fade in duration in frames */
   fadeInFrames: z.number().int().nonnegative().default(30),
+  
   /** Fade out duration in frames */
   fadeOutFrames: z.number().int().nonnegative().default(30),
+  
+  // --- Loop configuration ---
+  
   /** Whether to loop the BGM */
   loop: z.boolean().default(true),
+  
+  /** Loop start point in frames */
+  loopStartFrames: z.number().int().nonnegative().optional(),
+  
+  /** Loop end point in frames */
+  loopEndFrames: z.number().int().nonnegative().optional(),
+  
+  /** Loop crossfade duration in frames */
+  loopCrossfadeFrames: z.number().int().nonnegative().optional(),
+  
+  // --- Idle boost ---
+  
+  /**
+   * Volume boost in dB when no one is talking
+   * Applied on top of base volume, clamped by maxGainDb
+   */
+  idleBoostDb: z.number().min(-60).max(12).optional(),
+  
+  // --- Ducking ---
+  
   /** Ducking configuration */
   ducking: bgmDuckingSchema.optional(),
+  
+  // --- Scene transition (clip-to-clip crossfade) ---
+  
+  /** Transition in duration in frames (crossfade from previous clip) */
+  transitionInFrames: z.number().int().nonnegative().optional(),
+  
+  /** Transition out duration in frames (crossfade to next clip) */
+  transitionOutFrames: z.number().int().nonnegative().optional(),
 });
 
-// BGM track
+// BGM track (supports multiple clips for scene transitions)
 export const bgmTrackSchema = z.object({
   type: z.literal("bgm"),
   clips: z.array(bgmClipSchema),

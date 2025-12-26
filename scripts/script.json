@@ -7,15 +7,21 @@
     "defaultPauseSec": 0.5,
     "bgm": {
       "src": "bgm/main.mp3",
+      "preset": "talk",
       "volumeDb": -12,
+      "maxGainDb": -3,
       "fadeInSec": 1.0,
       "fadeOutSec": 1.0,
       "loop": true,
+      "loopCrossfadeSec": 0.25,
+      "idleBoostDb": 3,
       "ducking": {
         "enabled": true,
         "duckDeltaDb": -8,
-        "attackSec": 2.1,
-        "releaseSec": 2.2
+        "attackSec": 0.10,
+        "releaseSec": 0.25,
+        "mergeGapSec": 0.35,
+        "minHoldSec": 0.60
       }
     }
   },

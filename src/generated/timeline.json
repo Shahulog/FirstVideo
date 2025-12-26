@@ -38,7 +38,7 @@
       }
     },
     "bgm": {
-      "bgm1": {
+      "bgm_1548d6a2": {
         "src": "bgm/main.mp3",
         "durationFrames": 5905
       }
@@ -246,18 +246,63 @@
       "type": "bgm",
       "clips": [
         {
-          "assetId": "bgm1",
+          "assetId": "bgm_1548d6a2",
           "start": 0,
-          "duration": 2076,
-          "fadeInFrames": 30,
-          "fadeOutFrames": 30,
-          "loop": true,
+          "duration": 939,
           "volumeDb": -12,
+          "maxGainDb": -3,
+          "fadeInFrames": 30,
+          "fadeOutFrames": 1,
+          "loop": true,
+          "idleBoostDb": 3,
+          "loopCrossfadeFrames": 8,
           "ducking": {
             "enabled": true,
-            "attackFrames": 63,
-            "releaseFrames": 66,
-            "duckDeltaDb": -8
+            "duckDeltaDb": -8,
+            "attackFrames": 3,
+            "releaseFrames": 8,
+            "mergeGapFrames": 11,
+            "minHoldFrames": 18
+          }
+        },
+        {
+          "assetId": "bgm_1548d6a2",
+          "start": 939,
+          "duration": 1016,
+          "volumeDb": -12,
+          "maxGainDb": -3,
+          "fadeInFrames": 1,
+          "fadeOutFrames": 1,
+          "loop": true,
+          "idleBoostDb": 3,
+          "loopCrossfadeFrames": 8,
+          "ducking": {
+            "enabled": true,
+            "duckDeltaDb": -8,
+            "attackFrames": 3,
+            "releaseFrames": 8,
+            "mergeGapFrames": 11,
+            "minHoldFrames": 18
+          }
+        },
+        {
+          "assetId": "bgm_1548d6a2",
+          "start": 1955,
+          "duration": 121,
+          "volumeDb": -12,
+          "maxGainDb": -3,
+          "fadeInFrames": 1,
+          "fadeOutFrames": 30,
+          "loop": true,
+          "idleBoostDb": 3,
+          "loopCrossfadeFrames": 8,
+          "ducking": {
+            "enabled": true,
+            "duckDeltaDb": -8,
+            "attackFrames": 3,
+            "releaseFrames": 8,
+            "mergeGapFrames": 11,
+            "minHoldFrames": 18
           }
         }
       ]

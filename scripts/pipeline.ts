@@ -18,6 +18,7 @@ import { parseScript, type Script, type DialogueBlock } from "../spec/script.sch
 import { compile } from "../src/compiler/compile";
 import { parseTimeline } from "../spec/timeline.schema";
 import { generateAudioKey, type AudioManifestItem } from "../src/compiler/rules/dialogue";
+import { generateBgmAssetId } from "../src/compiler/presets/bgm";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -337,30 +338,61 @@ function secondsToFrames(sec: number, fps: number): number {
 }
 
 /**
- * Get BGM duration in frames using ffprobe
- * Returns a map of assetId -> durationFrames, or undefined if BGM is not configured
+ * Collect all unique BGM sources from script
+ * Returns array of { src, assetId }
+ */
+function collectBgmSources(script: Script): Array<{ src: string; assetId: string }> {
+  const sources: Map<string, string> = new Map(); // src -> assetId
+  
+  // Video-level BGM
+  if (script.video.bgm?.src) {
+    const src = script.video.bgm.src;
+    sources.set(src, generateBgmAssetId(src));
+  }
+  
+  // Scene-level BGM overrides
+  for (const scene of script.scenes) {
+    if (scene.style?.bgm?.src) {
+      const src = scene.style.bgm.src;
+      if (!sources.has(src)) {
+        sources.set(src, generateBgmAssetId(src));
+      }
+    }
+  }
+  
+  return Array.from(sources.entries()).map(([src, assetId]) => ({ src, assetId }));
+}
+
+/**
+ * Get BGM duration in frames using ffprobe for all BGM sources
+ * Returns a map of assetId -> durationFrames
  */
 function getBgmDurationFrames(script: Script): Record<string, number> | undefined {
-  const bgm = script.video.bgm;
-  if (!bgm) {
-    return undefined;
-  }
-
-  const bgmPath = resolveBgmFilePath(bgm.src);
-  const durationSec = getMediaDurationSeconds(bgmPath);
-
-  if (durationSec === null) {
-    return undefined;
-  }
-
-  const fps = script.video.fps ?? 30;
-  const durationFrames = secondsToFrames(durationSec, fps);
+  const bgmSources = collectBgmSources(script);
   
-  console.log(`🎵 BGM duration: ${durationSec.toFixed(2)}s (${durationFrames} frames)`);
-
-  return {
-    "bgm1": durationFrames,
-  };
+  if (bgmSources.length === 0) {
+    return undefined;
+  }
+  
+  const fps = script.video.fps ?? 30;
+  const result: Record<string, number> = {};
+  let hasAnyDuration = false;
+  
+  for (const { src, assetId } of bgmSources) {
+    const bgmPath = resolveBgmFilePath(src);
+    const durationSec = getMediaDurationSeconds(bgmPath);
+    
+    if (durationSec !== null) {
+      const durationFrames = secondsToFrames(durationSec, fps);
+      result[assetId] = durationFrames;
+      hasAnyDuration = true;
+      console.log(`🎵 BGM "${src}": ${durationSec.toFixed(2)}s (${durationFrames} frames)`);
+    } else {
+      console.warn(`⚠️ Could not get duration for BGM "${src}"`);
+    }
+  }
+  
+  return hasAnyDuration ? result : undefined;
 }
 
 /**
