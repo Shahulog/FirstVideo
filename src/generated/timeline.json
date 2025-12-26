@@ -248,15 +248,15 @@
           "assetId": "bgm1",
           "start": 0,
           "duration": 2076,
-          "volume": 0.25,
           "fadeInFrames": 30,
           "fadeOutFrames": 30,
           "loop": true,
+          "volumeDb": -12,
           "ducking": {
             "enabled": true,
-            "duckVolume": 0.35,
-            "attackFrames": 3,
-            "releaseFrames": 6
+            "attackFrames": 63,
+            "releaseFrames": 66,
+            "duckDeltaDb": -8
           }
         }
       ]

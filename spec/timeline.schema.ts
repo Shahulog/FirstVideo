@@ -77,10 +77,24 @@ export const characterTrackSchema = z.object({
 });
 
 // BGM ducking configuration (frame-based)
+// Priority order for ducking: duckDeltaDb > duckVolumeDb > duckVolume
 export const bgmDuckingSchema = z.object({
   enabled: z.boolean().default(true),
-  /** Volume multiplier during dialogue (0.0-1.0) */
-  duckVolume: z.number().min(0).max(1).default(0.35),
+  /** 
+   * Relative dB reduction during dialogue (usually negative, e.g. -8)
+   * Priority 1 (HIGHEST): Applied as baseGain * 10^(duckDeltaDb/20)
+   */
+  duckDeltaDb: z.number().min(-60).max(0).optional(),
+  /**
+   * Absolute dB level during dialogue (e.g. -20)
+   * Priority 2: Applied as 10^(duckVolumeDb/20)
+   */
+  duckVolumeDb: z.number().min(-60).max(6).optional(),
+  /** 
+   * Volume multiplier during dialogue (0.0-1.0)
+   * Priority 3 (LOWEST): Applied as baseGain * duckVolume
+   */
+  duckVolume: z.number().min(0).max(1).optional(),
   /** Attack time in frames */
   attackFrames: z.number().int().nonnegative().default(3),
   /** Release time in frames */
@@ -88,12 +102,21 @@ export const bgmDuckingSchema = z.object({
 });
 
 // BGM clip on the bgm track
+// Priority order for base volume: volumeDb > volume > DEFAULT_BASE_DB (-12)
 export const bgmClipSchema = z.object({
   assetId: z.string(),
   start: z.number().int().nonnegative(),
   duration: z.number().int().positive(),
-  /** Base volume (0.0-1.0) */
-  volume: z.number().min(0).max(1).default(0.25),
+  /**
+   * Base volume in dB (e.g. -12)
+   * Priority 1 (HIGHEST): Converted to gain = 10^(volumeDb/20)
+   */
+  volumeDb: z.number().min(-60).max(6).optional(),
+  /** 
+   * Base volume (0.0-1.0)
+   * Priority 2 (LOWEST): Used directly as gain
+   */
+  volume: z.number().min(0).max(1).optional(),
   /** Fade in duration in frames */
   fadeInFrames: z.number().int().nonnegative().default(30),
   /** Fade out duration in frames */

@@ -7,15 +7,15 @@
     "defaultPauseSec": 0.5,
     "bgm": {
       "src": "bgm/main.mp3",
-      "volume": 0.25,
+      "volumeDb": -12,
       "fadeInSec": 1.0,
       "fadeOutSec": 1.0,
       "loop": true,
       "ducking": {
         "enabled": true,
-        "duckVolume": 0.35,
-        "attackSec": 0.1,
-        "releaseSec": 0.2
+        "duckDeltaDb": -8,
+        "attackSec": 2.1,
+        "releaseSec": 2.2
       }
     }
   },

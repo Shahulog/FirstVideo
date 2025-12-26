@@ -97,24 +97,46 @@ export function compile(script: Script, options: CompileOptions): Timeline {
     };
     
     // Create BGM clip with frame-based values
+    // Priority order for base volume: volumeDb > volume > DEFAULT_BASE_DB (-12)
     const bgmClip: BgmClip = {
       assetId: bgmAssetId,
       start: 0,
       duration: currentFrame,
-      volume: bgm.volume ?? 0.25,
-      fadeInFrames: secToFrames(bgm.fadeInSec ?? 1.0, fps),
-      fadeOutFrames: secToFrames(bgm.fadeOutSec ?? 1.0, fps),
+      fadeInFrames: Math.max(1, secToFrames(bgm.fadeInSec ?? 1.0, fps)),
+      fadeOutFrames: Math.max(1, secToFrames(bgm.fadeOutSec ?? 1.0, fps)),
       loop: bgm.loop ?? true,
     };
     
+    // Set volume - prioritize volumeDb over volume
+    if (bgm.volumeDb !== undefined) {
+      bgmClip.volumeDb = bgm.volumeDb;
+    } else if (bgm.volume !== undefined) {
+      bgmClip.volume = bgm.volume;
+    } else {
+      // Default: -12 dB
+      bgmClip.volumeDb = -12;
+    }
+    
     // Add ducking configuration if present
     if (bgm.ducking) {
+      // Priority order: duckDeltaDb > duckVolumeDb > duckVolume
       bgmClip.ducking = {
         enabled: bgm.ducking.enabled ?? true,
-        duckVolume: bgm.ducking.duckVolume ?? 0.35,
-        attackFrames: secToFrames(bgm.ducking.attackSec ?? 0.1, fps),
-        releaseFrames: secToFrames(bgm.ducking.releaseSec ?? 0.2, fps),
+        attackFrames: Math.max(1, secToFrames(bgm.ducking.attackSec ?? 0.1, fps)),
+        releaseFrames: Math.max(1, secToFrames(bgm.ducking.releaseSec ?? 0.2, fps)),
       };
+      
+      // Set ducking volume - preserve priority order
+      if (bgm.ducking.duckDeltaDb !== undefined) {
+        bgmClip.ducking.duckDeltaDb = bgm.ducking.duckDeltaDb;
+      } else if (bgm.ducking.duckVolumeDb !== undefined) {
+        bgmClip.ducking.duckVolumeDb = bgm.ducking.duckVolumeDb;
+      } else if (bgm.ducking.duckVolume !== undefined) {
+        bgmClip.ducking.duckVolume = bgm.ducking.duckVolume;
+      } else {
+        // Default: -8 dB delta
+        bgmClip.ducking.duckDeltaDb = -8;
+      }
     }
     
     // Create BGM track

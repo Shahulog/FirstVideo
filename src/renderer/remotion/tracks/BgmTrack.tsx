@@ -5,6 +5,12 @@
  * - Fade in/out
  * - Loop support
  * - Ducking (auto volume reduction during dialogue)
+ * 
+ * Volume Priority Order:
+ * - Base volume: volumeDb > volume > DEFAULT_BASE_DB (-12)
+ * - Ducking: duckDeltaDb > duckVolumeDb > duckVolume > DEFAULT_DUCK_DELTA_DB (-8)
+ * 
+ * Conversion: gain = 10^(dB/20)
  */
 import React, { useMemo } from "react";
 import { Audio, Sequence, Loop, useCurrentFrame, useVideoConfig } from "remotion";
@@ -13,7 +19,18 @@ import type {
   BgmTrack as BgmTrackType, 
   TimelineAssets,
   CharacterTrack as CharacterTrackType,
+  BgmClip,
 } from "../../../../spec/timeline.schema";
+import { 
+  dbToGain, 
+  clamp, 
+  DEFAULT_BASE_DB, 
+  DEFAULT_DUCK_DELTA_DB,
+  VOLUME_DB_MIN,
+  VOLUME_DB_MAX,
+  DUCK_DELTA_DB_MIN,
+  DUCK_DELTA_DB_MAX,
+} from "../../../domain/audio";
 
 interface BgmTrackProps {
   track: BgmTrackType;
@@ -39,109 +56,156 @@ function getTalkingIntervals(
 }
 
 /**
- * Check if a frame is within any talking interval
+ * Calculate base gain from clip settings
+ * Priority: volumeDb > volume > DEFAULT_BASE_DB
  */
-function isFrameInTalkingInterval(
-  frame: number,
-  intervals: Array<{ start: number; end: number }>
-): boolean {
-  return intervals.some((interval) => frame >= interval.start && frame < interval.end);
+function getBaseGain(clip: BgmClip): number {
+  if (clip.volumeDb !== undefined) {
+    return dbToGain(clamp(clip.volumeDb, VOLUME_DB_MIN, VOLUME_DB_MAX));
+  }
+  if (clip.volume !== undefined) {
+    return clamp(clip.volume, 0, 1);
+  }
+  return dbToGain(DEFAULT_BASE_DB);
+}
+
+/**
+ * Calculate target gain during talking (ducked gain)
+ * Priority: duckDeltaDb > duckVolumeDb > duckVolume > DEFAULT_DUCK_DELTA_DB
+ * 
+ * duckDeltaDb: baseGain * 10^(duckDeltaDb/20) - relative reduction
+ * duckVolumeDb: 10^(duckVolumeDb/20) - absolute level
+ * duckVolume: baseGain * duckVolume - multiplier
+ */
+function getTalkGain(
+  clip: BgmClip,
+  baseGain: number
+): number {
+  const ducking = clip.ducking;
+  if (!ducking) {
+    // Default ducking with duckDeltaDb = -8
+    return baseGain * dbToGain(DEFAULT_DUCK_DELTA_DB);
+  }
+
+  // Priority 1 (HIGHEST): duckDeltaDb - relative dB reduction
+  if (ducking.duckDeltaDb !== undefined) {
+    const clampedDelta = clamp(ducking.duckDeltaDb, DUCK_DELTA_DB_MIN, DUCK_DELTA_DB_MAX);
+    return baseGain * dbToGain(clampedDelta);
+  }
+
+  // Priority 2: duckVolumeDb - absolute dB level
+  if (ducking.duckVolumeDb !== undefined) {
+    return dbToGain(clamp(ducking.duckVolumeDb, VOLUME_DB_MIN, VOLUME_DB_MAX));
+  }
+
+  // Priority 3 (LOWEST): duckVolume - multiplier
+  if (ducking.duckVolume !== undefined) {
+    return baseGain * clamp(ducking.duckVolume, 0, 1);
+  }
+
+  // Default: -8 dB delta
+  return baseGain * dbToGain(DEFAULT_DUCK_DELTA_DB);
 }
 
 /**
  * Calculate ducking multiplier with attack/release smoothing
- * Returns a value between duckVolume and 1.0
+ * Returns the interpolated gain between talkGain and baseGain
  */
-function calculateDuckingMultiplier(
+function calculateDuckedGain(
   frame: number,
   intervals: Array<{ start: number; end: number }>,
-  duckVolume: number,
+  baseGain: number,
+  talkGain: number,
   attackFrames: number,
   releaseFrames: number
 ): number {
-  // Find the nearest talking interval
-  let minDistanceToTalking = Infinity;
+  // Guard against zero division
+  const safeAttackFrames = Math.max(1, attackFrames);
+  const safeReleaseFrames = Math.max(1, releaseFrames);
+
+  // Find if we're in a talking interval, approaching one, or leaving one
   let isInTalking = false;
-  
+  let minDistanceToStart = Infinity;
+  let minDistanceFromEnd = Infinity;
+
   for (const interval of intervals) {
     if (frame >= interval.start && frame < interval.end) {
       isInTalking = true;
-      // Distance to end of talking (for release)
-      minDistanceToTalking = 0;
       break;
     }
-    
-    // Distance to start of interval (for attack)
+
+    // Distance to upcoming interval (for attack)
     if (frame < interval.start) {
-      minDistanceToTalking = Math.min(minDistanceToTalking, interval.start - frame);
+      minDistanceToStart = Math.min(minDistanceToStart, interval.start - frame);
     }
-    
-    // Distance from end of interval (for release)
+
+    // Distance from end of past interval (for release)
     if (frame >= interval.end) {
-      const distFromEnd = frame - interval.end;
-      if (distFromEnd < releaseFrames) {
-        // We're in the release phase after this interval
-        // Check if there's another interval starting soon
-        const nextInterval = intervals.find(i => i.start > interval.end && i.start <= frame + attackFrames);
-        if (!nextInterval) {
-          // Calculate release progress
-          const releaseProgress = distFromEnd / releaseFrames;
-          return duckVolume + (1 - duckVolume) * releaseProgress;
-        }
-      }
+      minDistanceFromEnd = Math.min(minDistanceFromEnd, frame - interval.end);
     }
   }
-  
+
+  // If in talking interval, return talk gain
   if (isInTalking) {
-    return duckVolume;
+    return talkGain;
   }
-  
+
   // Attack phase: approaching a talking interval
-  if (minDistanceToTalking <= attackFrames && minDistanceToTalking > 0) {
-    const attackProgress = 1 - (minDistanceToTalking / attackFrames);
-    return 1 - (1 - duckVolume) * attackProgress;
+  if (minDistanceToStart <= safeAttackFrames) {
+    const attackProgress = 1 - (minDistanceToStart / safeAttackFrames);
+    return baseGain - (baseGain - talkGain) * attackProgress;
   }
-  
-  return 1.0;
+
+  // Release phase: leaving a talking interval
+  if (minDistanceFromEnd < safeReleaseFrames) {
+    // Check if there's an upcoming interval within attack range
+    const hasUpcomingTalk = minDistanceToStart <= safeAttackFrames;
+    if (!hasUpcomingTalk) {
+      const releaseProgress = minDistanceFromEnd / safeReleaseFrames;
+      return talkGain + (baseGain - talkGain) * releaseProgress;
+    }
+  }
+
+  return baseGain;
 }
 
 /**
  * BgmClip component that handles volume calculation
  */
 const BgmClipComponent: React.FC<{
-  assetId: string;
+  clip: BgmClip;
   src: string;
-  clipStart: number;
-  clipDuration: number;
-  baseVolume: number;
-  fadeInFrames: number;
-  fadeOutFrames: number;
-  loop: boolean;
-  ducking?: {
-    enabled: boolean;
-    duckVolume: number;
-    attackFrames: number;
-    releaseFrames: number;
-  };
   talkingIntervals: Array<{ start: number; end: number }>;
 }> = ({
+  clip,
   src,
-  clipStart,
-  clipDuration,
-  baseVolume,
-  fadeInFrames,
-  fadeOutFrames,
-  loop,
-  ducking,
   talkingIntervals,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+
+  // Pre-calculate gains (memoized for performance)
+  const { baseGain, talkGain, fadeInFrames, fadeOutFrames, attackFrames, releaseFrames } = useMemo(() => {
+    const bg = getBaseGain(clip);
+    const tg = getTalkGain(clip, bg);
+    return {
+      baseGain: bg,
+      talkGain: tg,
+      fadeInFrames: Math.max(1, clip.fadeInFrames ?? 30),
+      fadeOutFrames: Math.max(1, clip.fadeOutFrames ?? 30),
+      attackFrames: clip.ducking?.attackFrames ?? 3,
+      releaseFrames: clip.ducking?.releaseFrames ?? 6,
+    };
+  }, [clip]);
   
   // Calculate volume at current frame
   const volume = useMemo(() => {
-    const globalFrame = clipStart + frame;
-    
+    const globalFrame = clip.start + frame;
+    const isDuckingEnabled = clip.ducking?.enabled ?? true;
+
+    // Guard: if baseGain is 0, return 0
+    if (baseGain === 0) return 0;
+
     // Fade in multiplier (0 -> 1)
     let fadeInMul = 1;
     if (frame < fadeInFrames) {
@@ -150,25 +214,40 @@ const BgmClipComponent: React.FC<{
     
     // Fade out multiplier (1 -> 0)
     let fadeOutMul = 1;
-    const fadeOutStart = clipDuration - fadeOutFrames;
+    const fadeOutStart = clip.duration - fadeOutFrames;
     if (frame >= fadeOutStart) {
       fadeOutMul = 1 - (frame - fadeOutStart) / fadeOutFrames;
     }
     
-    // Ducking multiplier
-    let duckMul = 1;
-    if (ducking?.enabled) {
-      duckMul = calculateDuckingMultiplier(
+    // Calculate ducked gain
+    let currentGain = baseGain;
+    if (isDuckingEnabled && talkingIntervals.length > 0) {
+      currentGain = calculateDuckedGain(
         globalFrame,
         talkingIntervals,
-        ducking.duckVolume,
-        ducking.attackFrames,
-        ducking.releaseFrames
+        baseGain,
+        talkGain,
+        attackFrames,
+        releaseFrames
       );
     }
     
-    return baseVolume * fadeInMul * fadeOutMul * duckMul;
-  }, [frame, clipStart, clipDuration, baseVolume, fadeInFrames, fadeOutFrames, ducking, talkingIntervals]);
+    // Final volume = duckedGain * fadeMul
+    // Note: fadeInMul and fadeOutMul apply to the current gain level
+    return currentGain * fadeInMul * fadeOutMul;
+  }, [
+    frame, 
+    clip.start, 
+    clip.duration, 
+    baseGain,
+    talkGain,
+    fadeInFrames, 
+    fadeOutFrames, 
+    attackFrames,
+    releaseFrames,
+    clip.ducking?.enabled,
+    talkingIntervals
+  ]);
   
   // Estimate audio duration for loop (30 seconds default, will be overridden by actual file)
   const estimatedAudioDuration = 30 * fps;
@@ -180,7 +259,7 @@ const BgmClipComponent: React.FC<{
     />
   );
   
-  if (loop) {
+  if (clip.loop ?? true) {
     return (
       <Loop durationInFrames={estimatedAudioDuration}>
         {audioElement}
@@ -215,15 +294,8 @@ export const BgmTrack: React.FC<BgmTrackProps> = ({ track, assets, characterTrac
             layout="none"
           >
             <BgmClipComponent
-              assetId={clip.assetId}
+              clip={clip}
               src={asset.src}
-              clipStart={clip.start}
-              clipDuration={clip.duration}
-              baseVolume={clip.volume ?? 0.25}
-              fadeInFrames={clip.fadeInFrames ?? 30}
-              fadeOutFrames={clip.fadeOutFrames ?? 30}
-              loop={clip.loop ?? true}
-              ducking={clip.ducking}
               talkingIntervals={talkingIntervals}
             />
           </Sequence>
@@ -232,4 +304,3 @@ export const BgmTrack: React.FC<BgmTrackProps> = ({ track, assets, characterTrac
     </>
   );
 };
-
