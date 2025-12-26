@@ -1,0 +1,73 @@
+{
+  "version": "0.1",
+  "video": {
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "defaultPauseSec": 0.5
+  },
+  "cast": {
+    "shahulog": {
+      "voice": {
+        "engine": "voicevox",
+        "speakerId": 3
+      },
+      "assets": {
+        "baseDir": "shahulog/立ち絵"
+      }
+    }
+  },
+  "scenes": [
+    {
+      "id": "intro",
+      "blocks": [
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "こんにちは！今回はRemotionを使って動画生成を自動化するテストを行っています。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "今まで手作業でやっていた編集作業を、プログラムコードで管理できるのがRemotionの強みです。Reactの知識があれば、Webサイトを作る感覚で動画が作れちゃうんです。すごいですよね。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "背景のグリッドや、私の立ち絵の表示、そしてこの口パクも、全部コードで制御されています。"
+        }
+      ]
+    },
+    {
+      "id": "main",
+      "blocks": [
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "今回はVoicevoxを使って音声合成も自動化します。台本テキストを用意して、スクリプトを走らせれば、音声ファイルが生成されます。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "これが完成すれば、大量の動画を短時間で作れるようになります。YouTubeの運用や、解説動画の作成が劇的に楽になりますね。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "これからもっと機能を増やして、画像のスライドショーや、エフェクトなんかも自由自在に扱えるように改良していきますよ！"
+        }
+      ]
+    },
+    {
+      "id": "outro",
+      "blocks": [
+        {
+          "type": "dialogue",
+          "speaker": "shahulog",
+          "text": "それじゃあ、また次の動画でお会いしましょう！"
+        }
+      ]
+    }
+  ]
+}
+

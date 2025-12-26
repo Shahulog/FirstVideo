@@ -5,3 +5,12 @@ dist
 
 # Ignore the output video from Git but not videos you import into src/.
 out
+
+# Generated files (by pipeline)
+# Located in src/generated for stable imports
+src/generated/timeline.json
+src/generated/audio-manifest.json
+
+# Legacy generated folder (deprecated)
+generated/timeline.json
+generated/audio-manifest.json
