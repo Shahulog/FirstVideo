@@ -1,16 +1,44 @@
+/**
+ * Character Component
+ * 
+ * Renders a character with lip-sync animation.
+ * Supports multiple characters via characterId.
+ */
 import React, { useMemo } from "react";
 import { Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
+// Character configurations
+const CHARACTER_CONFIGS: Record<string, { baseDir: string }> = {
+  shahulog: { baseDir: "shahulog/立ち絵" },
+  // Add more characters here as needed
+};
+
+const DEFAULT_CONFIG = { baseDir: "shahulog/立ち絵" };
+
 interface CharacterProps {
-    isTalking?: boolean; // Controls mouth animation
+  characterId?: string;
+  isTalking?: boolean;
 }
 
-export const Character: React.FC<CharacterProps> = ({ isTalking = false }) => {
+export const Character: React.FC<CharacterProps> = ({ 
+  characterId = "shahulog",
+  isTalking = false,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Blink Logic
-  // Blink every 3 seconds (approx 90 frames)
+  // Get character configuration
+  const config = CHARACTER_CONFIGS[characterId] ?? DEFAULT_CONFIG;
+  const basePath = config.baseDir;
+
+  // Log characterId for debugging (only in development)
+  useMemo(() => {
+    if (characterId !== "shahulog") {
+      console.log(`[Character] Rendering characterId="${characterId}" with basePath="${basePath}"`);
+    }
+  }, [characterId, basePath]);
+
+  // Blink Logic - blink every 3 seconds
   const blinkInterval = 3 * fps;
   const blinkDuration = 5;
   
@@ -19,13 +47,9 @@ export const Character: React.FC<CharacterProps> = ({ isTalking = false }) => {
     return cycleFrame < blinkDuration;
   }, [frame, blinkInterval]);
 
-  // Mouth Logic
-  // Simple oscillation if talking
-  const mouthOpenFreq = 6; // Toggle every 6 frames
+  // Mouth Logic - simple oscillation if talking
+  const mouthOpenFreq = 6;
   const isMouthOpen = isTalking && (frame % mouthOpenFreq < mouthOpenFreq / 2);
-
-  // Base path for assets
-  const basePath = "shahulog/立ち絵";
 
   // Asset Paths
   const bodyImg = `${basePath}/体/モニター肌色.png`;
@@ -41,8 +65,7 @@ export const Character: React.FC<CharacterProps> = ({ isTalking = false }) => {
 
   return (
     <div className="relative w-full h-full">
-      {/* Layers: Body -> Face Parts -> Hair usually (or Hair Back -> Body -> Face -> Hair Front) */}
-      {/* Assuming standard single-layer parts where Hair goes on top */}
+      {/* Layers: Body -> Face Parts -> Hair */}
       
       {/* 1. Body */}
       <Img 

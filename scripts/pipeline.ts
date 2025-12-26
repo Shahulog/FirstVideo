@@ -1,7 +1,7 @@
 /**
  * Pipeline Script (TypeScript version)
  * 
- * Orchestrates: Script -> Audio Generation -> Timeline Compilation
+ * Orchestrates: Script -> Normalize -> Audio Generation -> Timeline Compilation
  * 
  * Uses the unified compile logic from src/compiler/compile.ts
  * Uses Zod validation from spec/script.schema.ts
@@ -14,10 +14,10 @@ import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 // Import schema and compiler
-import { parseScript, type Script } from "../spec/script.schema";
+import { parseScript, type Script, type DialogueBlock } from "../spec/script.schema";
 import { compile } from "../src/compiler/compile";
 import { parseTimeline } from "../spec/timeline.schema";
-import type { AudioManifestItem } from "../src/compiler/rules/dialogue";
+import { generateAudioKey, type AudioManifestItem } from "../src/compiler/rules/dialogue";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,11 +25,11 @@ const __dirname = path.dirname(__filename);
 // Paths
 const SCRIPT_FILE = path.join(__dirname, "script.json");
 const SCENARIO_FILE = path.join(__dirname, "scenario.json");
-const AUDIO_MANIFEST_SRC = path.join(__dirname, "..", "src", "audio_manifest.json");
 
-// Output to src/generated for stable imports
+// Output to src/generated for stable imports (SSOT)
 const GENERATED_DIR = path.join(__dirname, "..", "src", "generated");
-const AUDIO_MANIFEST_DEST = path.join(GENERATED_DIR, "audio-manifest.json");
+const NORMALIZED_SCRIPT_FILE = path.join(GENERATED_DIR, "script.normalized.json");
+const AUDIO_MANIFEST_FILE = path.join(GENERATED_DIR, "audio-manifest.json");
 const TIMELINE_FILE = path.join(GENERATED_DIR, "timeline.json");
 
 /**
@@ -45,7 +45,7 @@ function ensureDir(dir: string): void {
 /**
  * Convert old scenario.json format to Script v0.1
  */
-function convertScenarioToScript(scenario: Array<{ text: string; speakerId?: number }>): Script {
+function convertScenarioToScript(scenario: Array<{ text: string; speakerId?: number; fileName?: string }>): Script {
   const speakerId = scenario[0]?.speakerId ?? 3;
   
   return {
@@ -62,17 +62,43 @@ function convertScenarioToScript(scenario: Array<{ text: string; speakerId?: num
           engine: "voicevox",
           speakerId,
         },
+        assets: {
+          baseDir: "shahulog/立ち絵",
+        },
       },
     },
     scenes: [{
       id: "main",
-      blocks: scenario.map(item => ({
+      blocks: scenario.map((item, index) => ({
         type: "dialogue" as const,
         speaker: "shahulog",
         text: item.text,
+        audioKey: generateAudioKey("main", index),
+        fileName: item.fileName,
       })),
     }],
   };
+}
+
+/**
+ * Normalize script: ensure all dialogue blocks have audioKey
+ */
+function normalizeScript(script: Script): Script {
+  const normalizedScenes = script.scenes.map((scene) => {
+    const normalizedBlocks = scene.blocks.map((block, blockIndex) => {
+      if (block.type === "dialogue") {
+        const dialogueBlock = block as DialogueBlock;
+        return {
+          ...dialogueBlock,
+          audioKey: dialogueBlock.audioKey ?? dialogueBlock.id ?? generateAudioKey(scene.id, blockIndex),
+        };
+      }
+      return block;
+    });
+    return { ...scene, blocks: normalizedBlocks };
+  });
+  
+  return { ...script, scenes: normalizedScenes };
 }
 
 /**
@@ -105,6 +131,14 @@ function loadScript(): Script {
 }
 
 /**
+ * Save normalized script
+ */
+function saveNormalizedScript(script: Script): void {
+  fs.writeFileSync(NORMALIZED_SCRIPT_FILE, JSON.stringify(script, null, 2));
+  console.log(`📝 Normalized script saved to ${NORMALIZED_SCRIPT_FILE}`);
+}
+
+/**
  * Check if VOICEVOX is running
  */
 async function isVoicevoxRunning(): Promise<boolean> {
@@ -117,7 +151,8 @@ async function isVoicevoxRunning(): Promise<boolean> {
 }
 
 /**
- * Run audio generation using existing generate_audio.mjs
+ * Run audio generation using generate_audio.mjs
+ * Passes normalized script path as argument
  */
 async function generateAudio(): Promise<boolean> {
   const voicevoxAvailable = await isVoicevoxRunning();
@@ -131,7 +166,11 @@ async function generateAudio(): Promise<boolean> {
   console.log("\n🎙️ Generating audio with VOICEVOX...");
   
   return new Promise((resolve, reject) => {
-    const genAudio = spawn("node", [path.join(__dirname, "generate_audio.mjs")], {
+    // Pass normalized script path as argument
+    const genAudio = spawn("node", [
+      path.join(__dirname, "generate_audio.mjs"),
+      NORMALIZED_SCRIPT_FILE,
+    ], {
       cwd: path.join(__dirname, ".."),
       stdio: "inherit",
     });
@@ -152,21 +191,17 @@ async function generateAudio(): Promise<boolean> {
 }
 
 /**
- * Load audio manifest
+ * Load audio manifest from SSOT location
  */
 function loadAudioManifest(): AudioManifestItem[] {
-  if (!fs.existsSync(AUDIO_MANIFEST_SRC)) {
-    console.warn("⚠️ Audio manifest not found, using empty manifest");
+  if (!fs.existsSync(AUDIO_MANIFEST_FILE)) {
+    console.warn("⚠️ Audio manifest not found at SSOT location, using empty manifest");
     return [];
   }
   
-  const manifestRaw = fs.readFileSync(AUDIO_MANIFEST_SRC, "utf-8");
+  const manifestRaw = fs.readFileSync(AUDIO_MANIFEST_FILE, "utf-8");
   const manifest: AudioManifestItem[] = JSON.parse(manifestRaw);
   console.log(`✅ Loaded audio manifest with ${manifest.length} items`);
-  
-  // Copy to generated directory
-  fs.writeFileSync(AUDIO_MANIFEST_DEST, JSON.stringify(manifest, null, 2));
-  console.log(`📝 Copied audio manifest to ${AUDIO_MANIFEST_DEST}`);
   
   return manifest;
 }
@@ -193,7 +228,7 @@ function saveTimeline(timeline: ReturnType<typeof compile>): void {
  * Main pipeline
  */
 async function main(): Promise<void> {
-  console.log("🚀 Starting pipeline (TypeScript)...\n");
+  console.log("🚀 Starting pipeline...\n");
   
   try {
     // 1. Ensure generated directory exists
@@ -202,7 +237,11 @@ async function main(): Promise<void> {
     // 2. Load and validate script with Zod
     const script = loadScript();
     
-    // 3. Generate audio (if VOICEVOX is available)
+    // 3. Normalize script (ensure all dialogue blocks have audioKey)
+    const normalizedScript = normalizeScript(script);
+    saveNormalizedScript(normalizedScript);
+    
+    // 4. Generate audio (if VOICEVOX is available)
     try {
       const audioGenerated = await generateAudio();
       if (!audioGenerated) {
@@ -213,15 +252,15 @@ async function main(): Promise<void> {
       console.warn("   Continuing with existing audio manifest...");
     }
     
-    // 4. Load audio manifest
+    // 5. Load audio manifest from SSOT
     const audioManifest = loadAudioManifest();
     
-    // 5. Compile timeline using the unified compiler
+    // 6. Compile timeline using the unified compiler
     console.log("\n🔧 Compiling timeline...");
-    const timeline = compile(script, { audioManifest });
+    const timeline = compile(normalizedScript, { audioManifest });
     console.log(`✅ Timeline compiled: ${timeline.meta.totalFrames} frames (${(timeline.meta.totalFrames / timeline.meta.fps).toFixed(2)}s)`);
     
-    // 6. Save timeline
+    // 7. Save timeline
     saveTimeline(timeline);
     
     console.log("\n✨ Pipeline completed successfully!");
@@ -238,4 +277,3 @@ async function main(): Promise<void> {
 }
 
 main();
-

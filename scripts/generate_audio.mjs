@@ -1,48 +1,100 @@
+/**
+ * Audio Generation Script
+ * 
+ * Generates audio files using VOICEVOX.
+ * Reads normalized script and outputs to src/generated/audio-manifest.json (SSOT).
+ * 
+ * Usage: node scripts/generate_audio.mjs [path-to-normalized-script]
+ */
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import { getAudioDurationInSeconds } from '@remotion/media-utils'; // Note: This usually runs in browser, but we might need a node alternative or just use file size approximation if node libs are tricky. 
-// Actually for Node script, let's use 'music-metadata' or similar if we want precision, or just rely on remotion's runtime duration calculation.
-// BUT, to layout items sequentially in Remotion without "CalculateMetadata", we need to know durations beforehand OR use a Series component.
-// Using <Series> is the easiest way in Remotion to play things sequentially!
-// However, passing durations to the manifest is still very helpful.
-
-// For this script, let's just get the files. We will let Remotion calculate durations at runtime using getAudioDurationInSeconds or use <Series> which handles sequencing automatically?
-// <Series> needs to know the duration of each child to offset the next one properly? No, Series automatically stacks them.
-// But <Series.Sequence> requires a duration.
-// So we DO need to know the duration of each WAV file.
-
-// Let's use a simple wav header parser or just fetch duration via another way. 
-// Since we are in a node script, we can't use @remotion/media-utils easily without window.
-// We will use 'wav-decoder' or similar, or just simple file size calculation for approximation?
-// PCM 16bit 24kHz mono: 
-// bytes = rate * channels * bits/8 * seconds
-// seconds = bytes / (rate * channels * bits/8)
-// Voicevox default: 24000 Hz, Mono, 16bit? Or 48000? usually 24k.
 
 const VOICEVOX_URL = 'http://127.0.0.1:50021'; 
-const SCENARIO_FILE = './scripts/scenario.json';
 const OUTPUT_DIR = './public/audio';
-const MANIFEST_FILE = './src/audio_manifest.json';
+
+// SSOT: All generated files go to src/generated
+const GENERATED_DIR = './src/generated';
+const MANIFEST_FILE = path.join(GENERATED_DIR, 'audio-manifest.json');
+
+// Accept normalized script path as argument, fallback to default
+const NORMALIZED_SCRIPT_FILE = process.argv[2] || path.join(GENERATED_DIR, 'script.normalized.json');
+
+// Legacy fallback
+const LEGACY_SCENARIO_FILE = './scripts/scenario.json';
+
+/**
+ * Load normalized script or fallback to legacy scenario
+ */
+function loadInput() {
+    // Try normalized script first
+    if (fs.existsSync(NORMALIZED_SCRIPT_FILE)) {
+        console.log(`📄 Loading normalized script: ${NORMALIZED_SCRIPT_FILE}`);
+        const scriptRaw = fs.readFileSync(NORMALIZED_SCRIPT_FILE, 'utf-8');
+        const script = JSON.parse(scriptRaw);
+        
+        // Flatten scenes to blocks with audioKey
+        const items = [];
+        for (const scene of script.scenes) {
+            for (const block of scene.blocks) {
+                if (block.type === 'dialogue') {
+                    const speakerId = script.cast[block.speaker]?.voice?.speakerId ?? 3;
+                    items.push({
+                        audioKey: block.audioKey,
+                        speaker: block.speaker,
+                        text: block.text,
+                        speakerId,
+                        fileName: block.fileName,
+                    });
+                }
+            }
+        }
+        return items;
+    }
+    
+    // Fallback to legacy scenario.json
+    if (fs.existsSync(LEGACY_SCENARIO_FILE)) {
+        console.log(`⚠️ Using legacy scenario: ${LEGACY_SCENARIO_FILE}`);
+        const scenarioRaw = fs.readFileSync(LEGACY_SCENARIO_FILE, 'utf-8');
+        const scenario = JSON.parse(scenarioRaw);
+        return scenario.map((item, index) => ({
+            audioKey: `main:${index}`,
+            speaker: 'shahulog',
+            text: item.text,
+            speakerId: item.speakerId ?? 3,
+            fileName: item.fileName,
+        }));
+    }
+    
+    throw new Error('No input found: neither normalized script nor legacy scenario exists');
+}
 
 async function generateAudio() {
     console.log('🚀 Starting Audio Generation...');
 
-    const scenarioRaw = fs.readFileSync(SCENARIO_FILE, 'utf-8');
-    const scenario = JSON.parse(scenarioRaw);
+    const items = loadInput();
+    console.log(`📝 Found ${items.length} dialogue blocks to process`);
 
+    // Ensure directories exist
     if (!fs.existsSync(OUTPUT_DIR)) {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
+    if (!fs.existsSync(GENERATED_DIR)) {
+        fs.mkdirSync(GENERATED_DIR, { recursive: true });
+    }
 
     const manifest = [];
+    let fileIndex = 0;
 
-    for (const item of scenario) {
-        const { fileName, text, speakerId } = item;
+    for (const item of items) {
+        const { audioKey, text, speakerId, fileName: existingFileName } = item;
+        
+        // Generate filename: use existing or create new
+        const fileName = existingFileName || String(fileIndex + 1).padStart(3, '0');
         const outputFilename = `${fileName}.wav`;
         const outputPath = path.join(OUTPUT_DIR, outputFilename);
 
-        console.log(`🎙️ Generating: ${text.slice(0, 20)}...`);
+        console.log(`🎙️ [${audioKey}] Generating: ${text.slice(0, 25)}...`);
 
         try {
             // A. Audio Query
@@ -69,36 +121,46 @@ async function generateAudio() {
             fs.writeFileSync(outputPath, audioBuffer);
             console.log(`✅ Saved: ${outputPath}`);
 
-            // D. Estimate Duration (WAV PCM calculation)
-            // WAV header is 44 bytes usually. 
-            // Voicevox: 24000Hz, 1ch, 16bit (2 bytes) -> 48000 bytes/sec
-            // Let's double check if we can parse header from buffer, but estimation is usually fine for 24khz.
-            // Actually, queryJson often has 'speedScale' etc, but not duration.
-            
-            // Let's try to read the sample rate from the buffer (bytes 24-27) to be safe
+            // D. Calculate Duration from WAV header
             const sampleRate = audioBuffer.readUInt32LE(24);
             const channels = audioBuffer.readUInt16LE(22);
             const bitsPerSample = audioBuffer.readUInt16LE(34);
             
-            const dataSize = audioBuffer.length - 44; // Approximate if simple wav
+            const dataSize = audioBuffer.length - 44;
             const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
             const durationInSeconds = dataSize / bytesPerSecond;
 
             console.log(`   ⏱️ Duration: ${durationInSeconds.toFixed(2)}s`);
 
+            // E. Add to manifest with audioKey (SSOT format)
             manifest.push({
-                ...item,
+                audioKey,
+                speakerId,
+                text,
                 audioSrc: `audio/${outputFilename}`,
-                durationInSeconds: durationInSeconds
+                durationInSeconds,
+                fileName,
             });
 
         } catch (error) {
-            console.error(`❌ Error generating ${fileName}:`, error.message);
+            console.error(`❌ Error generating [${audioKey}]:`, error.message);
+            // Still add to manifest with 0 duration so compile can warn
+            manifest.push({
+                audioKey,
+                speakerId,
+                text,
+                audioSrc: `audio/${outputFilename}`,
+                durationInSeconds: 0,
+                fileName,
+            });
         }
+        
+        fileIndex++;
     }
 
+    // Write manifest to SSOT location
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2));
-    console.log(`📝 Manifest written to ${MANIFEST_FILE}`);
+    console.log(`📝 Manifest written to ${MANIFEST_FILE} (SSOT)`);
 }
 
 generateAudio();

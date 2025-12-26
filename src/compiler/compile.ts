@@ -12,13 +12,13 @@ import type {
   CharacterTrack,
   TimelineAssets 
 } from "../../spec/timeline.schema";
-import { processDialogueBlock, type AudioManifestItem } from "./rules/dialogue";
+import { processDialogueBlock, type AudioManifestItem, type DialogueContext } from "./rules/dialogue";
 
 /**
  * Compile options
  */
 export interface CompileOptions {
-  /** Audio manifest from VOICEVOX generation */
+  /** Audio manifest from VOICEVOX generation (SSOT: src/generated/audio-manifest.json) */
   audioManifest: AudioManifestItem[];
 }
 
@@ -39,18 +39,24 @@ export function compile(script: Script, options: CompileOptions): Timeline {
   
   // Track current frame position
   let currentFrame = 0;
-  let blockIndex = 0;
+  let globalBlockIndex = 0;
   
   // Process all scenes
   for (const scene of script.scenes) {
+    let blockIndex = 0;
+    
     // Process all blocks in the scene
     for (const block of scene.blocks) {
-      const result = processBlock(block, {
+      const ctx: DialogueContext = {
         script,
+        scene,
         audioManifest,
         currentFrame,
         blockIndex,
-      });
+        globalBlockIndex,
+      };
+      
+      const result = processBlock(block, ctx);
       
       if (result) {
         // Add assets
@@ -70,6 +76,7 @@ export function compile(script: Script, options: CompileOptions): Timeline {
       }
       
       blockIndex++;
+      globalBlockIndex++;
     }
   }
   
@@ -94,12 +101,7 @@ export function compile(script: Script, options: CompileOptions): Timeline {
  */
 function processBlock(
   block: Block,
-  ctx: {
-    script: Script;
-    audioManifest: AudioManifestItem[];
-    currentFrame: number;
-    blockIndex: number;
-  }
+  ctx: DialogueContext
 ) {
   switch (block.type) {
     case "dialogue":

@@ -28,12 +28,16 @@ export const videoConfigSchema = z.object({
   defaultPauseSec: z.number().nonnegative().default(0.5),
 });
 
-// Block types
+// Block types - dialogue with audioKey support for stable audio binding
 export const dialogueBlockSchema = z.object({
   type: z.literal("dialogue"),
   speaker: z.string(),
   text: z.string().min(1),
   pauseSec: z.number().nonnegative().optional(),
+  // New fields for stable audio binding (重複テキスト耐性)
+  id: z.string().optional(),
+  audioKey: z.string().optional(),
+  fileName: z.string().optional(),
 });
 
 // Union of all block types (currently only dialogue)
@@ -78,4 +82,3 @@ export type Script = z.infer<typeof scriptSchema>;
 export function parseScript(input: unknown): Script {
   return scriptSchema.parse(input);
 }
-

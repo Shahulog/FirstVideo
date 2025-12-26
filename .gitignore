@@ -8,5 +8,6 @@ out
 
 # Generated files (by npm run pipeline)
 # Located in src/generated for stable Remotion imports
-src/generated/timeline.json
-src/generated/audio-manifest.json
+# NOTE: timeline.json and audio-manifest.json have dummy versions in git
+#       that get overwritten by pipeline. This allows static import.
+src/generated/script.normalized.json

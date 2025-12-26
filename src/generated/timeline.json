@@ -1,0 +1,240 @@
+{
+  "version": "0.1",
+  "meta": {
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "totalFrames": 2076
+  },
+  "assets": {
+    "audio": {
+      "audio_001": {
+        "src": "audio/001.wav",
+        "durationFrames": 196
+      },
+      "audio_002": {
+        "src": "audio/002.wav",
+        "durationFrames": 453
+      },
+      "audio_003": {
+        "src": "audio/003.wav",
+        "durationFrames": 245
+      },
+      "audio_004": {
+        "src": "audio/004.wav",
+        "durationFrames": 349
+      },
+      "audio_005": {
+        "src": "audio/005.wav",
+        "durationFrames": 342
+      },
+      "audio_006": {
+        "src": "audio/006.wav",
+        "durationFrames": 280
+      },
+      "audio_007": {
+        "src": "audio/007.wav",
+        "durationFrames": 106
+      }
+    }
+  },
+  "tracks": [
+    {
+      "type": "audio",
+      "clips": [
+        {
+          "assetId": "audio_001",
+          "start": 0,
+          "duration": 196
+        },
+        {
+          "assetId": "audio_002",
+          "start": 211,
+          "duration": 453
+        },
+        {
+          "assetId": "audio_003",
+          "start": 679,
+          "duration": 245
+        },
+        {
+          "assetId": "audio_004",
+          "start": 939,
+          "duration": 349
+        },
+        {
+          "assetId": "audio_005",
+          "start": 1303,
+          "duration": 342
+        },
+        {
+          "assetId": "audio_006",
+          "start": 1660,
+          "duration": 280
+        },
+        {
+          "assetId": "audio_007",
+          "start": 1955,
+          "duration": 106
+        }
+      ]
+    },
+    {
+      "type": "subtitle",
+      "clips": [
+        {
+          "start": 0,
+          "duration": 211,
+          "text": "こんにちは！今回はRemotionを使って動画生成を自動化するテストを行っています。"
+        },
+        {
+          "start": 211,
+          "duration": 468,
+          "text": "今まで手作業でやっていた編集作業を、プログラムコードで管理できるのがRemotionの強みです。Reactの知識があれば、Webサイトを作る感覚で動画が作れちゃうんです。すごいですよね。"
+        },
+        {
+          "start": 679,
+          "duration": 260,
+          "text": "背景のグリッドや、私の立ち絵の表示、そしてこの口パクも、全部コードで制御されています。"
+        },
+        {
+          "start": 939,
+          "duration": 364,
+          "text": "今回はVoicevoxを使って音声合成も自動化します。台本テキストを用意して、スクリプトを走らせれば、音声ファイルが生成されます。"
+        },
+        {
+          "start": 1303,
+          "duration": 357,
+          "text": "これが完成すれば、大量の動画を短時間で作れるようになります。YouTubeの運用や、解説動画の作成が劇的に楽になりますね。"
+        },
+        {
+          "start": 1660,
+          "duration": 295,
+          "text": "これからもっと機能を増やして、画像のスライドショーや、エフェクトなんかも自由自在に扱えるように改良していきますよ！"
+        },
+        {
+          "start": 1955,
+          "duration": 121,
+          "text": "それじゃあ、また次の動画でお会いしましょう！"
+        }
+      ]
+    },
+    {
+      "type": "character",
+      "clips": [
+        {
+          "start": 0,
+          "duration": 196,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 196,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 211,
+          "duration": 453,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 664,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 679,
+          "duration": 245,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 924,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 939,
+          "duration": 349,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 1288,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 1303,
+          "duration": 342,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 1645,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 1660,
+          "duration": 280,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 1940,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        },
+        {
+          "start": 1955,
+          "duration": 106,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": true
+          }
+        },
+        {
+          "start": 2061,
+          "duration": 15,
+          "characterId": "shahulog",
+          "state": {
+            "isTalking": false
+          }
+        }
+      ]
+    }
+  ]
+}

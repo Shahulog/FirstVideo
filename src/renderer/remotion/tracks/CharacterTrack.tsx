@@ -2,7 +2,7 @@
  * CharacterTrack Component
  * 
  * Renders character clips from the timeline using Remotion's Sequence.
- * Reuses the existing Character component.
+ * Passes characterId to Character component for multi-character support.
  */
 import React from "react";
 import { Sequence } from "remotion";
@@ -24,11 +24,13 @@ export const CharacterTrack: React.FC<CharacterTrackProps> = ({ track }) => {
           layout="none"
         >
           <div className="absolute bottom-[-100px] right-10 w-[400px] h-[500px]">
-            <Character isTalking={clip.state.isTalking} />
+            <Character 
+              characterId={clip.characterId}
+              isTalking={clip.state.isTalking} 
+            />
           </div>
         </Sequence>
       ))}
     </>
   );
 };
-
