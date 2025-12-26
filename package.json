@@ -32,8 +32,7 @@
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc",
     "gen-audio": "node scripts/generate_audio.mjs",
-    "pipeline": "npx tsx scripts/pipeline.ts",
-    "pipeline:legacy": "node scripts/pipeline.mjs"
+    "pipeline": "npx tsx scripts/pipeline.ts"
   },
   "sideEffects": [
     "*.css"
