@@ -23,6 +23,8 @@ export const audioAssetSchema = z.object({
 // BGM asset reference
 export const bgmAssetSchema = z.object({
   src: z.string(),
+  /** Duration in frames (from ffprobe). Optional - if missing, loop is disabled. */
+  durationFrames: z.number().int().positive().optional(),
 });
 
 // Timeline assets

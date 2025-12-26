@@ -13,7 +13,7 @@
  * Conversion: gain = 10^(dB/20)
  */
 import React, { useMemo } from "react";
-import { Audio, Sequence, Loop, useCurrentFrame, useVideoConfig } from "remotion";
+import { Audio, Sequence, Loop, useCurrentFrame } from "remotion";
 import { staticFile } from "remotion";
 import type { 
   BgmTrack as BgmTrackType, 
@@ -171,18 +171,23 @@ function calculateDuckedGain(
 
 /**
  * BgmClip component that handles volume calculation
+ * 
+ * Loop behavior:
+ * - If clip.loop is true AND loopDurationFrames is provided (from ffprobe), uses <Loop>
+ * - Otherwise, plays audio once without looping (quality-first fallback)
  */
 const BgmClipComponent: React.FC<{
   clip: BgmClip;
   src: string;
+  loopDurationFrames: number | undefined;
   talkingIntervals: Array<{ start: number; end: number }>;
 }> = ({
   clip,
   src,
+  loopDurationFrames,
   talkingIntervals,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
 
   // Pre-calculate gains (memoized for performance)
   const { baseGain, talkGain, fadeInFrames, fadeOutFrames, attackFrames, releaseFrames } = useMemo(() => {
@@ -249,9 +254,6 @@ const BgmClipComponent: React.FC<{
     talkingIntervals
   ]);
   
-  // Estimate audio duration for loop (30 seconds default, will be overridden by actual file)
-  const estimatedAudioDuration = 30 * fps;
-  
   const audioElement = (
     <Audio
       src={staticFile(src)}
@@ -259,14 +261,20 @@ const BgmClipComponent: React.FC<{
     />
   );
   
-  if (clip.loop ?? true) {
+  // Use Loop only if:
+  // 1. clip.loop is true (or undefined, defaults to true)
+  // 2. loopDurationFrames is available (from ffprobe)
+  const shouldLoop = (clip.loop ?? true) && loopDurationFrames !== undefined && loopDurationFrames > 0;
+  
+  if (shouldLoop) {
     return (
-      <Loop durationInFrames={estimatedAudioDuration}>
+      <Loop durationInFrames={loopDurationFrames}>
         {audioElement}
       </Loop>
     );
   }
   
+  // Fallback: play once without loop (when duration is unknown)
   return audioElement;
 };
 
@@ -286,6 +294,10 @@ export const BgmTrack: React.FC<BgmTrackProps> = ({ track, assets, characterTrac
           return null;
         }
         
+        // Get loop duration from asset (set by ffprobe in pipeline)
+        // If undefined, loop will be disabled for quality
+        const loopDurationFrames = asset.durationFrames;
+        
         return (
           <Sequence
             key={`bgm-${index}-${clip.assetId}`}
@@ -296,6 +308,7 @@ export const BgmTrack: React.FC<BgmTrackProps> = ({ track, assets, characterTrac
             <BgmClipComponent
               clip={clip}
               src={asset.src}
+              loopDurationFrames={loopDurationFrames}
               talkingIntervals={talkingIntervals}
             />
           </Sequence>

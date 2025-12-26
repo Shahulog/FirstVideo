@@ -39,7 +39,8 @@
     },
     "bgm": {
       "bgm1": {
-        "src": "bgm/main.mp3"
+        "src": "bgm/main.mp3",
+        "durationFrames": 5905
       }
     }
   },

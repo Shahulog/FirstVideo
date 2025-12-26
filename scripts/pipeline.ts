@@ -10,7 +10,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 
 // Import schema and compiler
@@ -224,6 +224,145 @@ function saveTimeline(timeline: ReturnType<typeof compile>): void {
   }
 }
 
+// ============================================================
+// BGM Duration Detection (via ffprobe)
+// ============================================================
+
+const PROJECT_ROOT = path.join(__dirname, "..");
+const PUBLIC_DIR = path.join(PROJECT_ROOT, "public");
+
+/**
+ * Resolve BGM file path (relative to public/ or absolute)
+ */
+function resolveBgmFilePath(bgmSrc: string): string {
+  if (path.isAbsolute(bgmSrc)) {
+    return bgmSrc;
+  }
+  return path.join(PUBLIC_DIR, bgmSrc);
+}
+
+/**
+ * Check if ffprobe is available in PATH
+ */
+function isFFprobeAvailable(): boolean {
+  try {
+    const result = spawnSync("ffprobe", ["-version"], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+// Cache ffprobe availability check
+let ffprobeAvailable: boolean | null = null;
+
+/**
+ * Get media duration in seconds using ffprobe
+ * Returns null if ffprobe is not available or file doesn't exist
+ */
+function getMediaDurationSeconds(filePath: string): number | null {
+  // Check ffprobe availability (cached)
+  if (ffprobeAvailable === null) {
+    ffprobeAvailable = isFFprobeAvailable();
+    if (!ffprobeAvailable) {
+      console.warn("[bgm] ffprobe not found in PATH; disabling loop for BGM");
+      console.warn("      Install ffmpeg and add to PATH for proper BGM looping");
+    }
+  }
+  
+  if (!ffprobeAvailable) {
+    return null;
+  }
+
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    console.warn(`[bgm] File not found: ${filePath}; disabling loop`);
+    return null;
+  }
+
+  try {
+    const result = spawnSync("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ], {
+      encoding: "utf8",
+      timeout: 30000, // 30 second timeout for larger files
+      windowsHide: true,
+    });
+
+    // Check if ffprobe executed successfully
+    if (result.error) {
+      const err = result.error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        console.warn("[bgm] ffprobe not found; disabling loop");
+      } else if (err.code === "ETIMEDOUT") {
+        console.warn("[bgm] ffprobe timed out; disabling loop");
+      } else {
+        console.warn(`[bgm] ffprobe error: ${err.message}; disabling loop`);
+      }
+      return null;
+    }
+
+    if (result.status !== 0) {
+      console.warn(`[bgm] ffprobe failed with code ${result.status}; disabling loop`);
+      return null;
+    }
+
+    const durationStr = result.stdout.trim();
+    const duration = parseFloat(durationStr);
+
+    if (isNaN(duration) || duration <= 0) {
+      console.warn(`[bgm] Failed to parse duration: "${durationStr}"; disabling loop`);
+      return null;
+    }
+
+    return duration;
+  } catch (err) {
+    console.warn(`[bgm] ffprobe execution failed: ${(err as Error).message}; disabling loop`);
+    return null;
+  }
+}
+
+/**
+ * Convert seconds to frames (round up)
+ */
+function secondsToFrames(sec: number, fps: number): number {
+  return Math.max(1, Math.ceil(sec * fps));
+}
+
+/**
+ * Get BGM duration in frames using ffprobe
+ * Returns a map of assetId -> durationFrames, or undefined if BGM is not configured
+ */
+function getBgmDurationFrames(script: Script): Record<string, number> | undefined {
+  const bgm = script.video.bgm;
+  if (!bgm) {
+    return undefined;
+  }
+
+  const bgmPath = resolveBgmFilePath(bgm.src);
+  const durationSec = getMediaDurationSeconds(bgmPath);
+
+  if (durationSec === null) {
+    return undefined;
+  }
+
+  const fps = script.video.fps ?? 30;
+  const durationFrames = secondsToFrames(durationSec, fps);
+  
+  console.log(`🎵 BGM duration: ${durationSec.toFixed(2)}s (${durationFrames} frames)`);
+
+  return {
+    "bgm1": durationFrames,
+  };
+}
+
 /**
  * Main pipeline
  */
@@ -255,12 +394,15 @@ async function main(): Promise<void> {
     // 5. Load audio manifest from SSOT
     const audioManifest = loadAudioManifest();
     
-    // 6. Compile timeline using the unified compiler
+    // 6. Get BGM duration via ffprobe (for proper loop timing)
+    const bgmDurationFrames = getBgmDurationFrames(normalizedScript);
+    
+    // 7. Compile timeline using the unified compiler
     console.log("\n🔧 Compiling timeline...");
-    const timeline = compile(normalizedScript, { audioManifest });
+    const timeline = compile(normalizedScript, { audioManifest, bgmDurationFrames });
     console.log(`✅ Timeline compiled: ${timeline.meta.totalFrames} frames (${(timeline.meta.totalFrames / timeline.meta.fps).toFixed(2)}s)`);
     
-    // 7. Save timeline
+    // 8. Save timeline
     saveTimeline(timeline);
     
     console.log("\n✨ Pipeline completed successfully!");

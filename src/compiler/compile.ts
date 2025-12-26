@@ -24,13 +24,15 @@ import { secToFrames } from "../domain/time";
 export interface CompileOptions {
   /** Audio manifest from VOICEVOX generation (SSOT: src/generated/audio-manifest.json) */
   audioManifest: AudioManifestItem[];
+  /** BGM duration in frames by asset ID (from ffprobe). If missing, loop is disabled. */
+  bgmDurationFrames?: Record<string, number>;
 }
 
 /**
  * Compile a Script into a Timeline
  */
 export function compile(script: Script, options: CompileOptions): Timeline {
-  const { audioManifest } = options;
+  const { audioManifest, bgmDurationFrames } = options;
   const { fps, width, height, bgm } = script.video;
   
   // Initialize tracks
@@ -91,9 +93,13 @@ export function compile(script: Script, options: CompileOptions): Timeline {
   if (bgm) {
     const bgmAssetId = "bgm1";
     
-    // Add BGM asset
+    // Add BGM asset (with durationFrames if available from ffprobe)
+    const bgmDuration = bgmDurationFrames?.[bgmAssetId];
     assets.bgm = {
-      [bgmAssetId]: { src: bgm.src },
+      [bgmAssetId]: { 
+        src: bgm.src,
+        ...(bgmDuration !== undefined && { durationFrames: bgmDuration }),
+      },
     };
     
     // Create BGM clip with frame-based values
