@@ -13,15 +13,17 @@
       "fadeInSec": 1.0,
       "fadeOutSec": 1.0,
       "loop": true,
-      "loopCrossfadeSec": 0.25,
+      "loopStartSec": 5.0,
+      "loopEndSec": 180.0,
+      "loopCrossfadeSec": 0.5,
       "idleBoostDb": 3,
       "ducking": {
         "enabled": true,
         "duckDeltaDb": -8,
-        "attackSec": 0.10,
-        "releaseSec": 0.25,
-        "mergeGapSec": 0.35,
-        "minHoldSec": 0.60
+        "attackSec": 0.15,
+        "releaseSec": 0.30,
+        "mergeGapSec": 0.5,
+        "minHoldSec": 0.8
       }
     }
   },

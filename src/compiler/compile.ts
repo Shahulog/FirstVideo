@@ -154,7 +154,32 @@ export function compile(script: Script, options: CompileOptions): Timeline {
 }
 
 /**
- * Generate BGM track with scene-based clips and transitions
+ * Serialize BGM config for comparison (stable JSON)
+ */
+function serializeConfig(config: ResolvedBgmConfig): string {
+  // Create a stable representation for comparison
+  return JSON.stringify({
+    src: config.src,
+    volumeDb: config.volumeDb,
+    maxGainDb: config.maxGainDb,
+    fadeInSec: config.fadeInSec,
+    fadeOutSec: config.fadeOutSec,
+    loop: config.loop,
+    loopStartSec: config.loopStartSec,
+    loopEndSec: config.loopEndSec,
+    loopCrossfadeSec: config.loopCrossfadeSec,
+    idleBoostDb: config.idleBoostDb,
+    ducking: config.ducking,
+  });
+}
+
+/**
+ * Generate BGM track with change-based clip splitting
+ * 
+ * Rules:
+ * - Only create new clip when config changes (src or settings)
+ * - If same config, extend previous clip
+ * - On src change, create crossfade overlap
  */
 function generateBgmTrack(
   videoBgm: BgmConfig,
@@ -166,80 +191,8 @@ function generateBgmTrack(
   const bgmAssets: Record<string, BgmAsset> = {};
   const bgmClips: BgmClip[] = [];
   
-  // Track previous clip for transition handling
-  let prevClipEnd = 0;
-  let prevAssetId: string | undefined;
-  let prevConfig: ResolvedBgmConfig | undefined;
-  
-  for (let i = 0; i < sceneTimings.length; i++) {
-    const { startFrame, endFrame, scene } = sceneTimings[i];
-    const sceneOverride = scene.style?.bgm;
-    
-    // Resolve BGM config for this scene
-    const config = resolveBgmConfig(videoBgm, sceneOverride);
-    const assetId = generateBgmAssetId(config.src);
-    
-    // Add asset if not already present
-    if (!bgmAssets[assetId]) {
-      const durationFrames = bgmDurationFrames?.[assetId];
-      bgmAssets[assetId] = {
-        src: config.src,
-        ...(durationFrames !== undefined && { durationFrames }),
-      };
-    }
-    
-    // Determine transition
-    const transitionSec = sceneOverride?.transitionSec ?? DEFAULT_TRANSITION_SEC;
-    const transitionFrames = Math.max(1, secToFrames(transitionSec, fps));
-    
-    // Check if src changed (requires clip split with transition)
-    const srcChanged = prevAssetId !== undefined && prevAssetId !== assetId;
-    const isFirstScene = i === 0;
-    const isLastScene = i === sceneTimings.length - 1;
-    
-    // Calculate clip boundaries with overlap for transitions
-    let clipStart = startFrame;
-    let clipEnd = endFrame;
-    
-    // Handle transition from previous clip
-    if (!isFirstScene && srcChanged) {
-      // Overlap with previous clip for crossfade
-      clipStart = Math.max(0, startFrame - transitionFrames);
-    }
-    
-    // Create BGM clip
-    const bgmClip = createBgmClip(
-      assetId,
-      clipStart,
-      clipEnd - clipStart,
-      config,
-      fps,
-      {
-        isFirstClip: isFirstScene,
-        isLastClip: isLastScene,
-        transitionInFrames: srcChanged ? transitionFrames : undefined,
-        transitionOutFrames: undefined, // Will be set when next clip is processed
-      }
-    );
-    
-    // Update previous clip's transitionOutFrames if src changed
-    if (srcChanged && bgmClips.length > 0) {
-      const prevClip = bgmClips[bgmClips.length - 1];
-      prevClip.transitionOutFrames = transitionFrames;
-      // Extend previous clip to overlap
-      prevClip.duration = startFrame + transitionFrames - prevClip.start;
-    }
-    
-    bgmClips.push(bgmClip);
-    
-    prevClipEnd = clipEnd;
-    prevAssetId = assetId;
-    prevConfig = config;
-  }
-  
-  // If no scene-based clips were created but we have video-level BGM,
-  // create a single clip spanning the entire timeline
-  if (bgmClips.length === 0 && sceneTimings.length === 0) {
+  if (sceneTimings.length === 0) {
+    // No scenes, create single clip for entire timeline
     const config = resolveBgmConfig(videoBgm);
     const assetId = generateBgmAssetId(config.src);
     const durationFrames = bgmDurationFrames?.[assetId];
@@ -257,6 +210,122 @@ function generateBgmTrack(
       fps,
       { isFirstClip: true, isLastClip: true }
     ));
+    
+    return { bgmAssets, bgmTrack: { type: "bgm", clips: bgmClips } };
+  }
+  
+  // Track current clip state
+  let currentClip: BgmClip | null = null;
+  let currentConfig: ResolvedBgmConfig | null = null;
+  let currentConfigStr = "";
+  let currentAssetId = "";
+  
+  for (let i = 0; i < sceneTimings.length; i++) {
+    const { startFrame, endFrame, scene } = sceneTimings[i];
+    const sceneOverride = scene.style?.bgm;
+    const isFirstScene = i === 0;
+    const isLastScene = i === sceneTimings.length - 1;
+    
+    // Resolve BGM config for this scene
+    const config = resolveBgmConfig(videoBgm, sceneOverride);
+    const configStr = serializeConfig(config);
+    const assetId = generateBgmAssetId(config.src);
+    
+    // Add asset if not already present
+    if (!bgmAssets[assetId]) {
+      const durationFrames = bgmDurationFrames?.[assetId];
+      bgmAssets[assetId] = {
+        src: config.src,
+        ...(durationFrames !== undefined && { durationFrames }),
+      };
+    }
+    
+    // Check if config changed
+    const configChanged = currentConfigStr !== configStr;
+    const srcChanged = currentAssetId !== "" && currentAssetId !== assetId;
+    
+    if (isFirstScene || configChanged) {
+      // Need to create a new clip
+      
+      // First, finalize previous clip if exists
+      if (currentClip !== null && srcChanged) {
+        // Src changed - set up crossfade
+        const transitionSec = sceneOverride?.transitionSec ?? DEFAULT_TRANSITION_SEC;
+        const transitionFrames = Math.max(1, secToFrames(transitionSec, fps));
+        
+        // Extend previous clip to overlap into the transition period
+        // oldClip ends at startFrame + transitionFrames
+        currentClip.duration = startFrame + transitionFrames - currentClip.start;
+        currentClip.transitionOutFrames = transitionFrames;
+        
+        // New clip starts at startFrame (NOT earlier)
+        // New clip has transitionIn
+        const newClip = createBgmClip(
+          assetId,
+          startFrame,
+          endFrame - startFrame,
+          config,
+          fps,
+          {
+            isFirstClip: false, // Not first overall, has transition
+            isLastClip: isLastScene,
+            transitionInFrames: transitionFrames,
+          }
+        );
+        
+        bgmClips.push(currentClip);
+        currentClip = newClip;
+      } else if (currentClip !== null) {
+        // Settings changed but not src - no crossfade needed, just split
+        // Finalize previous clip at scene boundary
+        currentClip.duration = startFrame - currentClip.start;
+        bgmClips.push(currentClip);
+        
+        // Create new clip
+        currentClip = createBgmClip(
+          assetId,
+          startFrame,
+          endFrame - startFrame,
+          config,
+          fps,
+          {
+            isFirstClip: false,
+            isLastClip: isLastScene,
+          }
+        );
+      } else {
+        // First clip
+        currentClip = createBgmClip(
+          assetId,
+          startFrame,
+          endFrame - startFrame,
+          config,
+          fps,
+          {
+            isFirstClip: true,
+            isLastClip: isLastScene,
+          }
+        );
+      }
+      
+      currentConfig = config;
+      currentConfigStr = configStr;
+      currentAssetId = assetId;
+    } else {
+      // Config is the same - extend current clip
+      if (currentClip !== null) {
+        currentClip.duration = endFrame - currentClip.start;
+        // Update isLastClip
+        if (isLastScene) {
+          currentClip.fadeOutFrames = Math.max(1, secToFrames(config.fadeOutSec, fps));
+        }
+      }
+    }
+  }
+  
+  // Don't forget to push the final clip
+  if (currentClip !== null) {
+    bgmClips.push(currentClip);
   }
   
   return {
@@ -305,7 +374,7 @@ function createBgmClip(
   if (config.loopEndSec !== undefined) {
     bgmClip.loopEndFrames = secToFrames(config.loopEndSec, fps);
   }
-  if (config.loopCrossfadeSec !== undefined) {
+  if (config.loopCrossfadeSec !== undefined && config.loopCrossfadeSec > 0) {
     bgmClip.loopCrossfadeFrames = secToFrames(config.loopCrossfadeSec, fps);
   }
   
