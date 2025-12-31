@@ -30,6 +30,8 @@ export const DEFAULT_TRANSITION_SEC = 1.0;
 
 /**
  * Resolved BGM configuration (all values explicitly set)
+ * 
+ * Ducking priority: duckDeltaDb > duckVolumeDb > duckVolume > DEFAULT_DUCK_DELTA_DB
  */
 export interface ResolvedBgmConfig {
   src: string;
@@ -44,7 +46,12 @@ export interface ResolvedBgmConfig {
   idleBoostDb: number;
   ducking: {
     enabled: boolean;
-    duckDeltaDb: number;
+    /** Priority 1: Relative dB reduction (usually negative) */
+    duckDeltaDb?: number;
+    /** Priority 2: Absolute dB level during dialogue */
+    duckVolumeDb?: number;
+    /** Priority 3: Volume multiplier (0.0-1.0) */
+    duckVolume?: number;
     attackSec: number;
     releaseSec: number;
     mergeGapSec: number;
@@ -136,6 +143,8 @@ export const BGM_PRESETS: Record<string, PresetConfig> = {
 
 /**
  * Get default BGM configuration (all values set to defaults)
+ * Note: ducking uses duckDeltaDb as default, but duckVolumeDb/duckVolume are undefined
+ * to allow explicit override detection
  */
 function getDefaultBgmConfig(): Omit<ResolvedBgmConfig, "src"> {
   return {
@@ -148,7 +157,10 @@ function getDefaultBgmConfig(): Omit<ResolvedBgmConfig, "src"> {
     idleBoostDb: DEFAULT_IDLE_BOOST_DB,
     ducking: {
       enabled: true,
+      // Only set duckDeltaDb as default - leave others undefined for explicit override
       duckDeltaDb: DEFAULT_DUCK_DELTA_DB,
+      duckVolumeDb: undefined,
+      duckVolume: undefined,
       attackSec: DEFAULT_ATTACK_SEC,
       releaseSec: DEFAULT_RELEASE_SEC,
       mergeGapSec: DEFAULT_MERGE_GAP_SEC,
@@ -238,6 +250,8 @@ export function resolveBgmConfig(
     const duckingPartial: Partial<typeof config.ducking> = {
       ...(videoBgm.ducking.enabled !== undefined && { enabled: videoBgm.ducking.enabled }),
       ...(videoBgm.ducking.duckDeltaDb !== undefined && { duckDeltaDb: videoBgm.ducking.duckDeltaDb }),
+      ...(videoBgm.ducking.duckVolumeDb !== undefined && { duckVolumeDb: videoBgm.ducking.duckVolumeDb }),
+      ...(videoBgm.ducking.duckVolume !== undefined && { duckVolume: videoBgm.ducking.duckVolume }),
       ...(videoBgm.ducking.attackSec !== undefined && { attackSec: videoBgm.ducking.attackSec }),
       ...(videoBgm.ducking.releaseSec !== undefined && { releaseSec: videoBgm.ducking.releaseSec }),
       ...(videoBgm.ducking.mergeGapSec !== undefined && { mergeGapSec: videoBgm.ducking.mergeGapSec }),
@@ -265,6 +279,8 @@ export function resolveBgmConfig(
       const duckingPartial: Partial<typeof config.ducking> = {
         ...(sceneOverride.ducking.enabled !== undefined && { enabled: sceneOverride.ducking.enabled }),
         ...(sceneOverride.ducking.duckDeltaDb !== undefined && { duckDeltaDb: sceneOverride.ducking.duckDeltaDb }),
+        ...(sceneOverride.ducking.duckVolumeDb !== undefined && { duckVolumeDb: sceneOverride.ducking.duckVolumeDb }),
+        ...(sceneOverride.ducking.duckVolume !== undefined && { duckVolume: sceneOverride.ducking.duckVolume }),
         ...(sceneOverride.ducking.attackSec !== undefined && { attackSec: sceneOverride.ducking.attackSec }),
         ...(sceneOverride.ducking.releaseSec !== undefined && { releaseSec: sceneOverride.ducking.releaseSec }),
         ...(sceneOverride.ducking.mergeGapSec !== undefined && { mergeGapSec: sceneOverride.ducking.mergeGapSec }),

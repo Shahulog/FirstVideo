@@ -244,12 +244,42 @@ interface LoopSegment {
 }
 
 /**
- * Generate loop segments for a clip with loop points and crossfade
+ * Calculate wrapped audio position within loop region
+ */
+function wrapAudioPosition(
+  position: number,
+  audioDuration: number,
+  loopStart: number,
+  loopEnd: number
+): number {
+  if (position < loopStart) {
+    return position;
+  }
+  
+  const loopLength = loopEnd - loopStart;
+  if (loopLength <= 0) {
+    return position % audioDuration;
+  }
+  
+  return loopStart + ((position - loopStart) % loopLength);
+}
+
+/**
+ * Generate loop segments for a clip with loop points, crossfade, and audio offset
  * 
  * This creates overlapping segments where:
  * - Each segment plays the loop region (loopStart to loopEnd)
  * - Segments overlap by loopCrossfadeFrames
  * - Overlapping region: outgoing fades 1→0, incoming fades 0→1
+ * - audioOffsetFrames allows continuous playback from a specific point
+ * 
+ * @param clipDuration - Duration of the BGM clip in frames
+ * @param audioDurationFrames - Total duration of the audio file in frames
+ * @param loopStartFrames - Loop start point in frames (undefined = 0)
+ * @param loopEndFrames - Loop end point in frames (undefined = audioDuration)
+ * @param loopCrossfadeFrames - Crossfade duration at loop seams
+ * @param audioOffsetFrames - Starting position in audio file (for continuous playback)
+ * @param fps - Frames per second
  */
 function generateLoopSegments(
   clipDuration: number,
@@ -257,6 +287,7 @@ function generateLoopSegments(
   loopStartFrames: number | undefined,
   loopEndFrames: number | undefined,
   loopCrossfadeFrames: number | undefined,
+  audioOffsetFrames: number,
   fps: number
 ): LoopSegment[] {
   // Determine loop region
@@ -271,11 +302,11 @@ function generateLoopSegments(
   
   const loopLength = loopEnd - loopStart;
   if (loopLength <= 0) {
-    // Fallback: single play with no loop
+    // Fallback: single play with offset
     return [{
       clipOffset: 0,
-      duration: Math.min(clipDuration, audioDurationFrames),
-      audioStartFrame: 0,
+      duration: Math.min(clipDuration, audioDurationFrames - audioOffsetFrames),
+      audioStartFrame: audioOffsetFrames,
       fadeInFrames: 0,
       fadeOutFrames: 0,
     }];
@@ -286,13 +317,29 @@ function generateLoopSegments(
   
   const segments: LoopSegment[] = [];
   let clipOffset = 0;
+  
+  // Calculate starting position in audio (wrapped to loop region if needed)
+  let audioPosition = wrapAudioPosition(audioOffsetFrames, audioDurationFrames, loopStart, loopEnd);
   let isFirst = true;
   
   while (clipOffset < clipDuration) {
-    // First segment starts at audio start (not loop start)
-    const audioStart = isFirst ? 0 : loopStart;
-    // First segment plays until loopEnd, subsequent segments play loopStart to loopEnd
-    const segmentAudioLength = isFirst ? loopEnd : loopLength;
+    // Determine how much of the current audio section we can play
+    let segmentAudioLength: number;
+    
+    if (isFirst && audioOffsetFrames < loopStart) {
+      // First segment starting from intro region (before loop)
+      // Play from offset to loopEnd
+      segmentAudioLength = loopEnd - audioOffsetFrames;
+      audioPosition = audioOffsetFrames;
+    } else if (isFirst && audioOffsetFrames >= loopStart) {
+      // First segment starting mid-loop
+      // Play from current position to loopEnd
+      segmentAudioLength = loopEnd - audioPosition;
+    } else {
+      // Subsequent segments: play full loop region
+      segmentAudioLength = loopLength;
+      audioPosition = loopStart;
+    }
     
     const remaining = clipDuration - clipOffset;
     const segmentDuration = Math.min(segmentAudioLength, remaining);
@@ -300,13 +347,13 @@ function generateLoopSegments(
     // Crossfade settings
     // First segment: no fade in, fade out at end if there's another segment
     // Middle segments: fade in at start, fade out at end
-    // Last segment: fade in at start, no fade out
+    // Last segment: fade in at start (if not first), no fade out
     const isLast = clipOffset + segmentDuration >= clipDuration;
     
     segments.push({
       clipOffset,
       duration: segmentDuration + (isLast ? 0 : effectiveCrossfade),
-      audioStartFrame: audioStart,
+      audioStartFrame: audioPosition,
       fadeInFrames: isFirst ? 0 : effectiveCrossfade,
       fadeOutFrames: isLast ? 0 : effectiveCrossfade,
     });
@@ -473,14 +520,18 @@ const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
   // Determine if looping is possible
   const shouldLoop = (clip.loop ?? true) && audioDurationFrames !== undefined && audioDurationFrames > 0;
   
+  // Get audio offset for continuous playback (default 0)
+  const audioOffsetFrames = clip.audioOffsetFrames ?? 0;
+  
   if (shouldLoop) {
-    // Generate loop segments with crossfade
+    // Generate loop segments with crossfade and offset
     const segments = generateLoopSegments(
       clip.duration,
       audioDurationFrames,
       clip.loopStartFrames,
       clip.loopEndFrames,
       clip.loopCrossfadeFrames,
+      audioOffsetFrames,
       fps
     );
     
@@ -506,10 +557,12 @@ const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
   }
   
   // Single playback (no loop or duration unknown)
+  // Use startFrom for audio offset if specified
   return (
     <Audio
       src={staticFile(src)}
       volume={volume}
+      startFrom={audioOffsetFrames > 0 ? audioOffsetFrames : undefined}
     />
   );
 };

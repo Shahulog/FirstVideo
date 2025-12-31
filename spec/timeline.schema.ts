@@ -137,6 +137,13 @@ export const bgmClipSchema = z.object({
   start: z.number().int().nonnegative(),
   duration: z.number().int().positive(),
   
+  /**
+   * Audio playback offset in frames.
+   * When a clip is split (e.g., for setting changes) but uses the same src,
+   * this offset ensures continuous playback instead of restarting from 0.
+   */
+  audioOffsetFrames: z.number().int().nonnegative().optional(),
+  
   // --- Base volume ---
   
   /**

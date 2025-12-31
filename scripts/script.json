@@ -61,6 +61,14 @@
     },
     {
       "id": "main",
+      "style": {
+        "bgm": {
+          "idleBoostDb": 4,
+          "ducking": {
+            "duckVolumeDb": -20
+          }
+        }
+      },
       "blocks": [
         {
           "type": "dialogue",
@@ -81,6 +89,13 @@
     },
     {
       "id": "outro",
+      "style": {
+        "bgm": {
+          "ducking": {
+            "duckVolume": 0.25
+          }
+        }
+      },
       "blocks": [
         {
           "type": "dialogue",

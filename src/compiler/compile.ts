@@ -174,12 +174,60 @@ function serializeConfig(config: ResolvedBgmConfig): string {
 }
 
 /**
- * Generate BGM track with change-based clip splitting
+ * Calculate audio playback position with loop wrapping
+ * 
+ * @param currentPos - Current accumulated playback position
+ * @param audioDuration - Total duration of audio file (undefined if unknown)
+ * @param loopStartFrames - Loop start point (undefined = 0)
+ * @param loopEndFrames - Loop end point (undefined = audioDuration)
+ * @param loop - Whether looping is enabled
+ * @returns Wrapped playback position, or raw position if duration unknown
+ */
+function wrapPlaybackPosition(
+  currentPos: number,
+  audioDuration: number | undefined,
+  loopStartFrames: number | undefined,
+  loopEndFrames: number | undefined,
+  loop: boolean
+): number {
+  // If no duration info, return raw position
+  // The renderer will handle this (single playback or offset truncation)
+  if (audioDuration === undefined || audioDuration <= 0) {
+    return currentPos;
+  }
+  
+  // If not looping, just clamp to audio duration
+  if (!loop) {
+    return Math.min(currentPos, audioDuration);
+  }
+  
+  const loopStart = loopStartFrames ?? 0;
+  const loopEnd = loopEndFrames ?? audioDuration;
+  const loopLength = loopEnd - loopStart;
+  
+  // Invalid loop region - use full audio
+  if (loopLength <= 0 || loopStart < 0 || loopEnd > audioDuration) {
+    return currentPos % audioDuration;
+  }
+  
+  // Position is in intro region (before loop start)
+  if (currentPos < loopStart) {
+    return currentPos;
+  }
+  
+  // Position is in loop region - wrap within loop
+  const posInLoop = (currentPos - loopStart) % loopLength;
+  return loopStart + posInLoop;
+}
+
+/**
+ * Generate BGM track with change-based clip splitting and continuous playback
  * 
  * Rules:
  * - Only create new clip when config changes (src or settings)
  * - If same config, extend previous clip
  * - On src change, create crossfade overlap
+ * - Same src with setting change: use audioOffsetFrames for continuous playback
  */
 function generateBgmTrack(
   videoBgm: BgmConfig,
@@ -190,6 +238,33 @@ function generateBgmTrack(
 ): { bgmAssets: Record<string, BgmAsset>; bgmTrack: BgmTrack } {
   const bgmAssets: Record<string, BgmAsset> = {};
   const bgmClips: BgmClip[] = [];
+  
+  // Track playback position by assetId for continuous playback
+  const playbackPosByAsset = new Map<string, number>();
+  
+  /**
+   * Get current playback position for an asset (returns wrapped position)
+   */
+  function getPlaybackPosition(assetId: string, config: ResolvedBgmConfig): number {
+    const currentPos = playbackPosByAsset.get(assetId) ?? 0;
+    const audioDuration = bgmDurationFrames?.[assetId];
+    
+    return wrapPlaybackPosition(
+      currentPos,
+      audioDuration,
+      config.loopStartSec !== undefined ? secToFrames(config.loopStartSec, fps) : undefined,
+      config.loopEndSec !== undefined ? secToFrames(config.loopEndSec, fps) : undefined,
+      config.loop
+    );
+  }
+  
+  /**
+   * Advance playback position for an asset
+   */
+  function advancePlaybackPosition(assetId: string, frames: number): void {
+    const currentPos = playbackPosByAsset.get(assetId) ?? 0;
+    playbackPosByAsset.set(assetId, currentPos + frames);
+  }
   
   if (sceneTimings.length === 0) {
     // No scenes, create single clip for entire timeline
@@ -202,14 +277,15 @@ function generateBgmTrack(
       ...(durationFrames !== undefined && { durationFrames }),
     };
     
-    bgmClips.push(createBgmClip(
+    const clip = createBgmClip(
       assetId,
       0,
       totalFrames,
       config,
       fps,
-      { isFirstClip: true, isLastClip: true }
-    ));
+      { isFirstClip: true, isLastClip: true, audioOffsetFrames: 0 }
+    );
+    bgmClips.push(clip);
     
     return { bgmAssets, bgmTrack: { type: "bgm", clips: bgmClips } };
   }
@@ -248,53 +324,67 @@ function generateBgmTrack(
       // Need to create a new clip
       
       // First, finalize previous clip if exists
-      if (currentClip !== null && srcChanged) {
-        // Src changed - set up crossfade
-        const transitionSec = sceneOverride?.transitionSec ?? DEFAULT_TRANSITION_SEC;
-        const transitionFrames = Math.max(1, secToFrames(transitionSec, fps));
+      if (currentClip !== null) {
+        // Calculate actual duration played
+        const prevClipDuration = startFrame - currentClip.start;
         
-        // Extend previous clip to overlap into the transition period
-        // oldClip ends at startFrame + transitionFrames
-        currentClip.duration = startFrame + transitionFrames - currentClip.start;
-        currentClip.transitionOutFrames = transitionFrames;
-        
-        // New clip starts at startFrame (NOT earlier)
-        // New clip has transitionIn
-        const newClip = createBgmClip(
-          assetId,
-          startFrame,
-          endFrame - startFrame,
-          config,
-          fps,
-          {
-            isFirstClip: false, // Not first overall, has transition
-            isLastClip: isLastScene,
-            transitionInFrames: transitionFrames,
-          }
-        );
-        
-        bgmClips.push(currentClip);
-        currentClip = newClip;
-      } else if (currentClip !== null) {
-        // Settings changed but not src - no crossfade needed, just split
-        // Finalize previous clip at scene boundary
-        currentClip.duration = startFrame - currentClip.start;
-        bgmClips.push(currentClip);
-        
-        // Create new clip
-        currentClip = createBgmClip(
-          assetId,
-          startFrame,
-          endFrame - startFrame,
-          config,
-          fps,
-          {
-            isFirstClip: false,
-            isLastClip: isLastScene,
-          }
-        );
+        if (srcChanged) {
+          // Src changed - set up crossfade
+          const transitionSec = sceneOverride?.transitionSec ?? DEFAULT_TRANSITION_SEC;
+          const transitionFrames = Math.max(1, secToFrames(transitionSec, fps));
+          
+          // Extend previous clip to overlap into the transition period
+          currentClip.duration = startFrame + transitionFrames - currentClip.start;
+          currentClip.transitionOutFrames = transitionFrames;
+          
+          // Advance playback position for old asset
+          advancePlaybackPosition(currentAssetId, currentClip.duration);
+          
+          bgmClips.push(currentClip);
+          
+          // New clip starts at startFrame with transition
+          // New src starts from 0 (no offset needed)
+          currentClip = createBgmClip(
+            assetId,
+            startFrame,
+            endFrame - startFrame,
+            config,
+            fps,
+            {
+              isFirstClip: false,
+              isLastClip: isLastScene,
+              transitionInFrames: transitionFrames,
+              audioOffsetFrames: 0, // New src starts from beginning
+            }
+          );
+        } else {
+          // Settings changed but not src - need audioOffsetFrames for continuous playback
+          currentClip.duration = prevClipDuration;
+          
+          // Advance playback position
+          advancePlaybackPosition(currentAssetId, prevClipDuration);
+          
+          bgmClips.push(currentClip);
+          
+          // Get current playback position (wrapped for loops)
+          const audioOffset = getPlaybackPosition(assetId, config);
+          
+          // Create new clip with offset for continuous playback
+          currentClip = createBgmClip(
+            assetId,
+            startFrame,
+            endFrame - startFrame,
+            config,
+            fps,
+            {
+              isFirstClip: false,
+              isLastClip: isLastScene,
+              audioOffsetFrames: audioOffset,
+            }
+          );
+        }
       } else {
-        // First clip
+        // First clip - starts from 0
         currentClip = createBgmClip(
           assetId,
           startFrame,
@@ -304,6 +394,7 @@ function generateBgmTrack(
           {
             isFirstClip: true,
             isLastClip: isLastScene,
+            audioOffsetFrames: 0,
           }
         );
       }
@@ -317,7 +408,7 @@ function generateBgmTrack(
         currentClip.duration = endFrame - currentClip.start;
         // Update isLastClip
         if (isLastScene) {
-          currentClip.fadeOutFrames = Math.max(1, secToFrames(config.fadeOutSec, fps));
+          currentClip.fadeOutFrames = Math.max(1, secToFrames(currentConfig!.fadeOutSec, fps));
         }
       }
     }
@@ -325,6 +416,8 @@ function generateBgmTrack(
   
   // Don't forget to push the final clip
   if (currentClip !== null) {
+    // Advance final position
+    advancePlaybackPosition(currentAssetId, currentClip.duration);
     bgmClips.push(currentClip);
   }
   
@@ -351,14 +444,18 @@ function createBgmClip(
     isLastClip: boolean;
     transitionInFrames?: number;
     transitionOutFrames?: number;
+    /** Audio playback offset in frames for continuous playback */
+    audioOffsetFrames?: number;
   }
 ): BgmClip {
-  const { isFirstClip, isLastClip, transitionInFrames, transitionOutFrames } = options;
+  const { isFirstClip, isLastClip, transitionInFrames, transitionOutFrames, audioOffsetFrames } = options;
   
   const bgmClip: BgmClip = {
     assetId,
     start,
     duration,
+    // Audio offset for continuous playback when splitting clips
+    ...(audioOffsetFrames !== undefined && audioOffsetFrames > 0 && { audioOffsetFrames }),
     volumeDb: config.volumeDb,
     maxGainDb: config.maxGainDb,
     fadeInFrames: isFirstClip ? Math.max(1, secToFrames(config.fadeInSec, fps)) : 1,
@@ -379,9 +476,13 @@ function createBgmClip(
   }
   
   // Ducking configuration
+  // Pass all ducking values - priority is handled by renderer
+  // Priority: duckDeltaDb > duckVolumeDb > duckVolume > DEFAULT (-8dB)
   bgmClip.ducking = {
     enabled: config.ducking.enabled,
-    duckDeltaDb: config.ducking.duckDeltaDb,
+    ...(config.ducking.duckDeltaDb !== undefined && { duckDeltaDb: config.ducking.duckDeltaDb }),
+    ...(config.ducking.duckVolumeDb !== undefined && { duckVolumeDb: config.ducking.duckVolumeDb }),
+    ...(config.ducking.duckVolume !== undefined && { duckVolume: config.ducking.duckVolume }),
     attackFrames: Math.max(1, secToFrames(config.ducking.attackSec, fps)),
     releaseFrames: Math.max(1, secToFrames(config.ducking.releaseSec, fps)),
     mergeGapFrames: secToFrames(config.ducking.mergeGapSec, fps),
