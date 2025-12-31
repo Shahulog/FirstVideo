@@ -14,11 +14,21 @@ import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 
 // Import schema and compiler
-import { parseScript, type Script, type DialogueBlock } from "../spec/script.schema";
+import { parseScript, type Script, type DialogueBlock, type AudioProfile } from "../spec/script.schema";
 import { compile } from "../src/compiler/compile";
 import { parseTimeline } from "../spec/timeline.schema";
 import { generateAudioKey, type AudioManifestItem } from "../src/compiler/rules/dialogue";
 import { generateBgmAssetId } from "../src/compiler/presets/bgm";
+
+// ============================================================
+// Default Audio Profile Values
+// ============================================================
+
+const DEFAULT_AUDIO_PROFILE: Required<AudioProfile> = {
+  bgmTargetLufs: -26,
+  bgmTargetLra: 11,
+  truePeakDb: -1.5,
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -395,6 +405,235 @@ function getBgmDurationFrames(script: Script): Record<string, number> | undefine
   return hasAnyDuration ? result : undefined;
 }
 
+// ============================================================
+// BGM Loudness Analysis (via ffmpeg loudnorm)
+// ============================================================
+
+// Cache ffmpeg availability check
+let ffmpegAvailable: boolean | null = null;
+
+/**
+ * Check if ffmpeg is available in PATH
+ */
+function isFFmpegAvailable(): boolean {
+  if (ffmpegAvailable !== null) {
+    return ffmpegAvailable;
+  }
+  
+  try {
+    const result = spawnSync("ffmpeg", ["-version"], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+    });
+    ffmpegAvailable = result.status === 0;
+  } catch {
+    ffmpegAvailable = false;
+  }
+  
+  if (!ffmpegAvailable) {
+    console.warn("[bgm] ffmpeg not found in PATH; skipping loudness analysis");
+  }
+  
+  return ffmpegAvailable;
+}
+
+/**
+ * Loudness analysis options
+ */
+interface LoudnessAnalysisOptions {
+  targetI: number;    // Target integrated loudness (LUFS)
+  targetLra: number;  // Target loudness range (LU)
+  targetTp: number;   // Target true peak (dB)
+  startSec?: number;  // Optional: analyze only from this point
+  endSec?: number;    // Optional: analyze only up to this point
+}
+
+/**
+ * Loudness analysis result from ffmpeg loudnorm
+ */
+interface LoudnormResult {
+  input_i: string;        // Input integrated loudness
+  input_tp: string;       // Input true peak
+  input_lra: string;      // Input loudness range
+  input_thresh: string;   // Input threshold
+  output_i: string;       // Output (target) integrated loudness
+  output_tp: string;      // Output true peak
+  output_lra: string;     // Output loudness range
+  output_thresh: string;  // Output threshold
+  normalization_type: string;
+  target_offset: string;  // The gain to apply (dB) - THIS IS WHAT WE NEED
+}
+
+/**
+ * Analyze BGM loudness and calculate the gain needed to reach target LUFS
+ * Uses ffmpeg loudnorm 1-pass analysis
+ * 
+ * @param filePath - Path to the audio file
+ * @param opts - Analysis options (targetI, targetLra, targetTp, optional startSec/endSec)
+ * @returns The gain in dB to apply, or null if analysis failed
+ */
+function analyzeLoudnessGainDb(filePath: string, opts: LoudnessAnalysisOptions): number | null {
+  if (!isFFmpegAvailable()) {
+    return null;
+  }
+  
+  if (!fs.existsSync(filePath)) {
+    console.warn(`[loudness] File not found: ${filePath}`);
+    return null;
+  }
+  
+  try {
+    // Build ffmpeg arguments
+    const args: string[] = [
+      "-hide_banner",
+      "-nostats",
+    ];
+    
+    // Add time range if specified (for loop region analysis)
+    if (opts.startSec !== undefined && opts.startSec > 0) {
+      args.push("-ss", opts.startSec.toFixed(3));
+    }
+    if (opts.endSec !== undefined) {
+      args.push("-to", opts.endSec.toFixed(3));
+    }
+    
+    // Input file
+    args.push("-i", filePath);
+    
+    // Loudnorm filter with JSON output
+    args.push(
+      "-af",
+      `loudnorm=I=${opts.targetI}:LRA=${opts.targetLra}:TP=${opts.targetTp}:print_format=json`,
+      "-f", "null",
+      "-"
+    );
+    
+    const result = spawnSync("ffmpeg", args, {
+      encoding: "utf8",
+      timeout: 60000, // 60 second timeout for longer files
+      windowsHide: true,
+    });
+    
+    if (result.error) {
+      const err = result.error as NodeJS.ErrnoException;
+      console.warn(`[loudness] ffmpeg error: ${err.message}`);
+      return null;
+    }
+    
+    // loudnorm outputs JSON to stderr
+    const stderr = result.stderr || "";
+    
+    // Extract JSON from stderr (it's at the end after [Parsed_loudnorm...] lines)
+    const jsonMatch = stderr.match(/\{[\s\S]*"target_offset"[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn("[loudness] Could not find loudnorm JSON in ffmpeg output");
+      return null;
+    }
+    
+    const loudnormJson = JSON.parse(jsonMatch[0]) as LoudnormResult;
+    const targetOffset = parseFloat(loudnormJson.target_offset);
+    
+    if (isNaN(targetOffset)) {
+      console.warn(`[loudness] Invalid target_offset: "${loudnormJson.target_offset}"`);
+      return null;
+    }
+    
+    // Clamp to reasonable range [-12, +12]
+    const clampedGain = Math.max(-12, Math.min(12, targetOffset));
+    
+    // Log analysis results
+    console.log(`📊 Loudness analysis for "${path.basename(filePath)}":`);
+    console.log(`   Input: ${loudnormJson.input_i} LUFS, TP: ${loudnormJson.input_tp} dB`);
+    console.log(`   Target: ${opts.targetI} LUFS → Gain: ${clampedGain.toFixed(2)} dB`);
+    
+    return clampedGain;
+  } catch (err) {
+    console.warn(`[loudness] Analysis failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Get loop region from script for a specific BGM source
+ * Returns { startSec, endSec } or undefined if no loop region specified
+ */
+function getBgmLoopRegion(script: Script, src: string): { startSec: number; endSec: number } | undefined {
+  // Check video-level BGM
+  if (script.video.bgm?.src === src) {
+    const bgm = script.video.bgm;
+    if (bgm.loopStartSec !== undefined && bgm.loopEndSec !== undefined) {
+      return { startSec: bgm.loopStartSec, endSec: bgm.loopEndSec };
+    }
+  }
+  
+  // Check scene-level overrides
+  for (const scene of script.scenes) {
+    if (scene.style?.bgm?.src === src) {
+      const bgm = scene.style.bgm;
+      if (bgm.loopStartSec !== undefined && bgm.loopEndSec !== undefined) {
+        return { startSec: bgm.loopStartSec, endSec: bgm.loopEndSec };
+      }
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Get resolved audio profile with defaults
+ */
+function getAudioProfile(script: Script): Required<AudioProfile> {
+  const profile = script.video.audioProfile;
+  return {
+    bgmTargetLufs: profile?.bgmTargetLufs ?? DEFAULT_AUDIO_PROFILE.bgmTargetLufs,
+    bgmTargetLra: profile?.bgmTargetLra ?? DEFAULT_AUDIO_PROFILE.bgmTargetLra,
+    truePeakDb: profile?.truePeakDb ?? DEFAULT_AUDIO_PROFILE.truePeakDb,
+  };
+}
+
+/**
+ * Analyze loudness for all BGM sources and return gain map
+ * Returns a map of assetId -> loudnessGainDb
+ */
+function getBgmLoudnessGainDb(script: Script): Record<string, number> | undefined {
+  const bgmSources = collectBgmSources(script);
+  
+  if (bgmSources.length === 0) {
+    return undefined;
+  }
+  
+  if (!isFFmpegAvailable()) {
+    return undefined;
+  }
+  
+  const audioProfile = getAudioProfile(script);
+  const result: Record<string, number> = {};
+  let hasAnyGain = false;
+  
+  for (const { src, assetId } of bgmSources) {
+    const bgmPath = resolveBgmFilePath(src);
+    
+    // Get loop region for more stable loudness measurement
+    const loopRegion = getBgmLoopRegion(script, src);
+    
+    const gainDb = analyzeLoudnessGainDb(bgmPath, {
+      targetI: audioProfile.bgmTargetLufs,
+      targetLra: audioProfile.bgmTargetLra,
+      targetTp: audioProfile.truePeakDb,
+      startSec: loopRegion?.startSec,
+      endSec: loopRegion?.endSec,
+    });
+    
+    if (gainDb !== null) {
+      result[assetId] = gainDb;
+      hasAnyGain = true;
+    }
+  }
+  
+  return hasAnyGain ? result : undefined;
+}
+
 /**
  * Main pipeline
  */
@@ -429,12 +668,16 @@ async function main(): Promise<void> {
     // 6. Get BGM duration via ffprobe (for proper loop timing)
     const bgmDurationFrames = getBgmDurationFrames(normalizedScript);
     
-    // 7. Compile timeline using the unified compiler
+    // 7. Analyze BGM loudness via ffmpeg loudnorm (for normalization)
+    console.log("\n🔊 Analyzing BGM loudness...");
+    const bgmLoudnessGainDb = getBgmLoudnessGainDb(normalizedScript);
+    
+    // 8. Compile timeline using the unified compiler
     console.log("\n🔧 Compiling timeline...");
-    const timeline = compile(normalizedScript, { audioManifest, bgmDurationFrames });
+    const timeline = compile(normalizedScript, { audioManifest, bgmDurationFrames, bgmLoudnessGainDb });
     console.log(`✅ Timeline compiled: ${timeline.meta.totalFrames} frames (${(timeline.meta.totalFrames / timeline.meta.fps).toFixed(2)}s)`);
     
-    // 8. Save timeline
+    // 9. Save timeline
     saveTimeline(timeline);
     
     console.log("\n✨ Pipeline completed successfully!");

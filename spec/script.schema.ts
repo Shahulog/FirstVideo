@@ -154,6 +154,34 @@ export const sceneBgmOverrideSchema = bgmConfigSchema.partial().extend({
   transitionSec: z.number().nonnegative().optional(),
 });
 
+// ============================================================
+// Audio Profile (Loudness Normalization)
+// ============================================================
+
+/**
+ * Audio profile configuration for loudness normalization
+ * Uses EBU R128 / ITU-R BS.1770-4 standard
+ */
+export const audioProfileSchema = z.object({
+  /**
+   * Target integrated loudness for BGM in LUFS (e.g. -26)
+   * Recommended: -24 to -28 for background music
+   */
+  bgmTargetLufs: z.number().min(-60).max(0).default(-26),
+  
+  /**
+   * Target loudness range in LU (optional, e.g. 11)
+   * Higher values allow more dynamic range
+   */
+  bgmTargetLra: z.number().min(1).max(20).default(11),
+  
+  /**
+   * Maximum true peak level in dB (e.g. -1.5)
+   * Prevents clipping during encoding
+   */
+  truePeakDb: z.number().min(-10).max(0).default(-1.5),
+});
+
 // Video configuration
 export const videoConfigSchema = z.object({
   fps: z.number().int().positive().default(30),
@@ -162,6 +190,8 @@ export const videoConfigSchema = z.object({
   defaultPauseSec: z.number().nonnegative().default(0.5),
   /** Background music configuration */
   bgm: bgmConfigSchema.optional(),
+  /** Audio loudness profile for normalization */
+  audioProfile: audioProfileSchema.optional(),
 });
 
 // Block types - dialogue with audioKey support for stable audio binding
@@ -211,6 +241,7 @@ export type BgmPreset = z.infer<typeof bgmPresetSchema>;
 export type BgmDuckingConfig = z.infer<typeof bgmDuckingConfigSchema>;
 export type BgmConfig = z.infer<typeof bgmConfigSchema>;
 export type SceneBgmOverride = z.infer<typeof sceneBgmOverrideSchema>;
+export type AudioProfile = z.infer<typeof audioProfileSchema>;
 export type VideoConfig = z.infer<typeof videoConfigSchema>;
 export type DialogueBlock = z.infer<typeof dialogueBlockSchema>;
 export type Block = z.infer<typeof blockSchema>;

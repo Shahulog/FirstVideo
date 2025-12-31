@@ -25,6 +25,12 @@ export const bgmAssetSchema = z.object({
   src: z.string(),
   /** Duration in frames (from ffprobe). Optional - if missing, loop is disabled. */
   durationFrames: z.number().int().positive().optional(),
+  /**
+   * Loudness normalization gain in dB (from ffmpeg loudnorm analysis).
+   * Applied as baseGain multiplier: baseGain * 10^(loudnessGainDb/20)
+   * Clamped to [-12, +12] for safety.
+   */
+  loudnessGainDb: z.number().min(-12).max(12).optional(),
 });
 
 // Timeline assets

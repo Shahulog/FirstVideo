@@ -39,8 +39,7 @@
     },
     "bgm": {
       "bgm_1548d6a2": {
-        "src": "bgm/main.mp3",
-        "durationFrames": 5905
+        "src": "bgm/main.mp3"
       }
     }
   },
@@ -271,7 +270,6 @@
           "assetId": "bgm_1548d6a2",
           "start": 939,
           "duration": 1016,
-          "audioOffsetFrames": 939,
           "volumeDb": -12,
           "maxGainDb": -3,
           "fadeInFrames": 1,
@@ -295,7 +293,6 @@
           "assetId": "bgm_1548d6a2",
           "start": 1955,
           "duration": 121,
-          "audioOffsetFrames": 1955,
           "volumeDb": -12,
           "maxGainDb": -3,
           "fadeInFrames": 1,

@@ -33,6 +33,8 @@ export interface CompileOptions {
   audioManifest: AudioManifestItem[];
   /** BGM duration in frames by asset ID (from ffprobe). If missing, loop is disabled. */
   bgmDurationFrames?: Record<string, number>;
+  /** BGM loudness normalization gain in dB by asset ID (from ffmpeg loudnorm). */
+  bgmLoudnessGainDb?: Record<string, number>;
 }
 
 /**
@@ -49,7 +51,7 @@ interface SceneTiming {
  * Compile a Script into a Timeline
  */
 export function compile(script: Script, options: CompileOptions): Timeline {
-  const { audioManifest, bgmDurationFrames } = options;
+  const { audioManifest, bgmDurationFrames, bgmLoudnessGainDb } = options;
   const { fps, width, height, bgm: videoBgm } = script.video;
   
   // Initialize tracks
@@ -125,7 +127,8 @@ export function compile(script: Script, options: CompileOptions): Timeline {
       sceneTimings,
       totalFrames,
       fps,
-      bgmDurationFrames
+      bgmDurationFrames,
+      bgmLoudnessGainDb
     );
     
     // Add BGM assets
@@ -234,7 +237,8 @@ function generateBgmTrack(
   sceneTimings: SceneTiming[],
   totalFrames: number,
   fps: number,
-  bgmDurationFrames?: Record<string, number>
+  bgmDurationFrames?: Record<string, number>,
+  bgmLoudnessGainDb?: Record<string, number>
 ): { bgmAssets: Record<string, BgmAsset>; bgmTrack: BgmTrack } {
   const bgmAssets: Record<string, BgmAsset> = {};
   const bgmClips: BgmClip[] = [];
@@ -246,9 +250,16 @@ function generateBgmTrack(
    * Get current playback position for an asset (returns wrapped position)
    */
   function getPlaybackPosition(assetId: string, config: ResolvedBgmConfig): number {
-    const currentPos = playbackPosByAsset.get(assetId) ?? 0;
     const audioDuration = bgmDurationFrames?.[assetId];
-    
+  
+    // ✅ durationが不明な場合は offset を使わない
+    // startFrom が音源長を超えて無音化する事故を防ぐ（品質優先）
+    if (audioDuration === undefined || audioDuration <= 0) {
+      return 0;
+    }
+  
+    const currentPos = playbackPosByAsset.get(assetId) ?? 0;
+  
     return wrapPlaybackPosition(
       currentPos,
       audioDuration,
@@ -257,6 +268,7 @@ function generateBgmTrack(
       config.loop
     );
   }
+  
   
   /**
    * Advance playback position for an asset
@@ -271,10 +283,12 @@ function generateBgmTrack(
     const config = resolveBgmConfig(videoBgm);
     const assetId = generateBgmAssetId(config.src);
     const durationFrames = bgmDurationFrames?.[assetId];
+    const loudnessGainDb = bgmLoudnessGainDb?.[assetId];
     
     bgmAssets[assetId] = {
       src: config.src,
       ...(durationFrames !== undefined && { durationFrames }),
+      ...(loudnessGainDb !== undefined && { loudnessGainDb }),
     };
     
     const clip = createBgmClip(
@@ -310,9 +324,11 @@ function generateBgmTrack(
     // Add asset if not already present
     if (!bgmAssets[assetId]) {
       const durationFrames = bgmDurationFrames?.[assetId];
+      const loudnessGainDb = bgmLoudnessGainDb?.[assetId];
       bgmAssets[assetId] = {
         src: config.src,
         ...(durationFrames !== undefined && { durationFrames }),
+        ...(loudnessGainDb !== undefined && { loudnessGainDb }),
       };
     }
     

@@ -5,6 +5,11 @@
     "width": 1920,
     "height": 1080,
     "defaultPauseSec": 0.5,
+    "audioProfile": {
+      "bgmTargetLufs": -26,
+      "bgmTargetLra": 11,
+      "truePeakDb": -1.5
+    },
     "bgm": {
       "src": "bgm/main.mp3",
       "preset": "talk",

@@ -432,6 +432,8 @@ interface BgmClipComponentProps {
   src: string;
   audioDurationFrames: number | undefined;
   duckIntervals: Interval[];
+  /** Loudness normalization gain in dB (from ffmpeg loudnorm analysis) */
+  loudnessGainDb: number;
 }
 
 const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
@@ -439,13 +441,19 @@ const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
   src,
   audioDurationFrames,
   duckIntervals,
+  loudnessGainDb,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   // Pre-calculate gains and parameters
+  // Apply loudness normalization to base gain: baseGain * 10^(loudnessGainDb/20)
   const params = useMemo(() => {
-    const baseGain = getBaseGain(clip);
+    // Get base gain from clip settings
+    const rawBaseGain = getBaseGain(clip);
+    // Apply loudness normalization (loudnessGainDb is already from ffmpeg loudnorm target_offset)
+    const baseGain = rawBaseGain * dbToGain(loudnessGainDb);
+    
     return {
       baseGain,
       idleGain: getIdleGain(clip, baseGain),
@@ -459,7 +467,7 @@ const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
       transitionInFrames: clip.transitionInFrames,
       transitionOutFrames: clip.transitionOutFrames,
     };
-  }, [clip]);
+  }, [clip, loudnessGainDb]);
   
   // Volume calculator function (for loop segments)
   const calculateVolume = useMemo(() => {
@@ -557,12 +565,20 @@ const BgmClipComponent: React.FC<BgmClipComponentProps> = ({
   }
   
   // Single playback (no loop or duration unknown)
-  // Use startFrom for audio offset if specified
+  // ✅ durationが分からない場合は startFrom を適用しない（無音化回避）
+  const safeStartFrom =
+    audioDurationFrames !== undefined &&
+    audioDurationFrames > 0 &&
+    audioOffsetFrames > 0 &&
+    audioOffsetFrames < audioDurationFrames
+      ? audioOffsetFrames
+      : undefined;
+
   return (
     <Audio
       src={staticFile(src)}
       volume={volume}
-      startFrom={audioOffsetFrames > 0 ? audioOffsetFrames : undefined}
+      startFrom={safeStartFrom}
     />
   );
 };
@@ -608,6 +624,7 @@ export const BgmTrack: React.FC<BgmTrackProps> = ({ track, assets, characterTrac
               src={asset.src}
               audioDurationFrames={asset.durationFrames}
               duckIntervals={duckIntervals}
+              loudnessGainDb={asset.loudnessGainDb ?? 0}
             />
           </Sequence>
         );
